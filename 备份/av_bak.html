@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频导航</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: #F8F9FA;
+            color: #0F172A;
+            min-height: 100vh;
+        }
+
+        /* ========== Nav (米白毛玻璃导航栏) ========== */
+        .nav-wrapper {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            background: #F3F5F9;
+            border-bottom: 1px solid rgba(15, 23, 42, .06);
+            transition: background .35s ease, backdrop-filter .35s ease, border-color .35s ease;
+        }
+        .nav-wrapper.scrolled {
+            background: rgba(243, 245, 249, 0.12);
+            backdrop-filter: blur(18px) saturate(1.4);
+            -webkit-backdrop-filter: blur(18px) saturate(1.4);
+            border-bottom-color: rgba(15, 23, 42, .04);
+        }
+        .nav-container { position: relative; display: flex; align-items: center; max-width: 100%; margin: 0 auto; }
+
+        .scroll-btn {
+            flex-shrink: 0; width: 36px; height: 48px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; color: rgba(15, 23, 42, .42); font-size: 20px; user-select: none;
+            background: linear-gradient(90deg, #F3F5F9 60%, transparent);
+            border: none; z-index: 2; position: relative;
+            transition: background .35s ease;
+        }
+        .nav-wrapper.scrolled .scroll-btn {
+            background: linear-gradient(90deg, rgba(243,245,249,.12) 60%, transparent);
+        }
+        .scroll-btn#scrollRight { background: linear-gradient(270deg, #F3F5F9 60%, transparent); }
+        .nav-wrapper.scrolled .scroll-btn#scrollRight {
+            background: linear-gradient(270deg, rgba(243,245,249,.12) 60%, transparent);
+        }
+        .scroll-btn:hover { color: #0F172A; }
+        .scroll-btn.hidden { opacity: 0; pointer-events: none; }
+
+        .tabs-viewport {
+            flex: 1; overflow: hidden; position: relative;
+            mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+            -webkit-mask-image: linear-gradient(to right, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
+        }
+        .tabs-track {
+            display: flex; gap: 2px;
+            transition: transform .35s cubic-bezier(.25,.1,.25,1);
+            will-change: transform; cursor: grab; touch-action: none;
+        }
+        .tabs-track.dragging { transition: none !important; cursor: grabbing; }
+
+        /* ===== Tab 项（底部胶囊指示器） ===== */
+        .tab-item {
+            flex-shrink: 0; padding: 0 20px; height: 48px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; color: rgba(15, 23, 42, 0.62); cursor: pointer; user-select: none;
+            white-space: nowrap; position: relative;
+            transition: color .25s ease;
+            border-radius: 0; margin: 0 2px;
+            background: transparent; border: none; font-family: inherit;
+        }
+        .tab-item:hover { color: #0F172A; }
+        .tab-item.active {
+            color: #FF6B6B;
+            font-weight: 700;
+        }
+        /* 底部胶囊指示器 — 仅 active 显示 */
+        .tab-item::after {
+            content: '';
+            position: absolute;
+            bottom: -2px; left: 50%;
+            width: 0; height: 4px;
+            border-radius: 100px;
+            background: #FF6B6B;
+            transform: translateX(-50%);
+            transition: width .35s cubic-bezier(.25,.1,.25,1);
+            opacity: 0;
+        }
+        .tab-item.active::after {
+            width: 28px;
+            opacity: 1;
+        }
+
+        /* ========== Main ========== */
+        .main-content {
+            margin-top: 60px; padding: 20px; max-width: 1400px; margin-left: auto; margin-right: auto;
+            min-height: calc(100vh - 80px);
+        }
+        .content-placeholder {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            min-height: 300px; color: rgba(15, 23, 42, .5); font-size: 16px; text-align: center;
+        }
+        .content-placeholder .icon { font-size: 48px; margin-bottom: 16px; }
+        .content-placeholder .sub { font-size: 13px; color: rgba(15, 23, 42, .38); margin-top: 8px; line-height: 1.8; }
+
+        .spinner {
+            width: 32px; height: 32px;
+            border: 3px solid #EAECEF; border-top-color: #FF6B6B;
+            border-radius: 50%; animation: spin .7s linear infinite; margin: 60px auto;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .error-box {
+            background: #FFF5F5; border: 1px solid #FFD5D5; border-radius: 10px;
+            padding: 24px; margin: 20px 0; text-align: left;
+        }
+        .error-box .err-title { color: #FF6B6B; font-weight: 700; font-size: 16px; margin-bottom: 8px; }
+        .error-box .err-detail { color: rgba(15, 23, 42, .55); font-size: 13px; font-family: monospace; word-break: break-all; }
+        .error-box .err-hint { color: #F59E0B; font-size: 13px; margin-top: 12px; }
+        .btn {
+            display: inline-block; padding: 8px 20px; border-radius: 6px;
+            border: none; cursor: pointer; font-size: 13px; font-family: inherit;
+            transition: opacity .2s; text-decoration: none;
+        }
+        .btn:hover { opacity: .85; }
+        .btn-primary { background: #FF6B6B; color: #fff; }
+        .btn-secondary { background: #EAECEF; color: #0F172A; }
+
+        /* ========== Home Sections ========== */
+        .home-section { margin-bottom: 32px; }
+        .home-section .section-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 14px; padding: 0 2px;
+        }
+        .home-section .section-title {
+            font-size: 18px; font-weight: 700; color: rgb(15, 23, 42);
+            letter-spacing: .3px;
+        }
+        .section-row {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px; padding: 2px 0 10px;
+        }
+        .section-row .card {
+            border-radius: 8px; overflow: hidden; background: #FFFFFF;
+            transition: transform .2s; cursor: pointer;
+            content-visibility: auto;
+            contain: layout style paint;
+            contain-intrinsic-size: auto 220px;
+        }
+        .section-row .card:hover { transform: translateY(-3px); }
+        .section-row .card .thumb {
+            width: 100%; aspect-ratio: 185/103;
+            background: #EAECEF url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='55' x='50' text-anchor='middle' font-size='28' opacity='.25'%3E📁%3C/text%3E%3C/svg%3E") center/40px no-repeat;
+            position: relative; display: flex; overflow: hidden; font-size: 12px; color: #555;
+        }
+        .section-row .card .thumb .thumb-img {
+            width: 100%; height: 100%; object-fit: cover;
+            display: block; opacity: 0; transition: opacity .35s ease;
+            backface-visibility: hidden;
+        }
+        .section-row .card .thumb .thumb-img.loaded { opacity: 1; }
+
+        /* ========== Skeleton (UI美化版) ========== */
+        .skeleton-card {
+            background: #FFFFFF; border-radius: 8px; overflow: hidden;
+        }
+        .skeleton-card .thumb-skeleton {
+            width: 100%; aspect-ratio: 185/103;
+            background: #EAECEF; position: relative; overflow: hidden;
+        }
+        .skeleton-card .thumb-skeleton::after {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(15,23,42,.04), transparent);
+            animation: shimmer 1.4s infinite linear;
+        }
+        @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+        .skeleton-card .info-skeleton { padding: 10px 12px; }
+        .skeleton-card .info-skeleton .line {
+            height: 12px; background: #EAECEF; border-radius: 4px; margin-bottom: 8px;
+        }
+        .skeleton-card .info-skeleton .line:last-child { width: 60%; }
+        .skel-section { opacity: 1; transition: opacity .25s ease; }
+        .skel-section.skel-fadeout { opacity: 0; }
+
+        .thumb-badge {
+            position: absolute;
+            bottom: 6px; right: 6px;
+            background: rgba(15, 23, 42, 0.6);
+            color: #fff; font-size: 11px;
+            padding: 2px 10px; border-radius: 100px;
+            white-space: nowrap;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            pointer-events: none;
+            line-height: 1.6;
+            letter-spacing: 0.3px;
+            font-weight: 500;
+        }
+        .section-row .card .info { padding: 10px 10px 12px; }
+        .section-row .card .info .title {
+            font-size: 13px; color: #0F172A; line-height: 1.4;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .section-row .card .info .meta { font-size: 11px; color: rgba(15, 23, 42, .45); margin-top: 4px; }
+
+        /* ========== General Video Grid ========== */
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 14px; padding: 4px 0;
+        }
+        .video-card {
+            border-radius: 8px; overflow: hidden;
+            background: #FFFFFF; transition: transform .2s, box-shadow .2s; cursor: pointer;
+        }
+        .video-card:hover { transform: translateY(-3px); }
+        .video-card .thumb {
+            width: 100%; aspect-ratio: 185/103;
+            background: #EAECEF url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='55' x='50' text-anchor='middle' font-size='28' opacity='.25'%3E📁%3C/text%3E%3C/svg%3E") center/40px no-repeat;
+            position: relative; display: flex; overflow: hidden; font-size: 12px; color: #555;
+        }
+        .video-card .thumb .thumb-img {
+            width: 100%; height: 100%; object-fit: cover;
+            display: block; opacity: 0; transition: opacity .35s ease;
+            backface-visibility: hidden;
+        }
+        .video-card .thumb .thumb-img.loaded { opacity: 1; }
+        .video-card .info { padding: 10px 12px 12px; }
+        .video-card .info .title {
+            font-size: 13px; color: #0F172A; line-height: 1.4;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+        }
+        .video-card .info .meta { font-size: 11px; color: rgba(15, 23, 42, .45); margin-top: 4px; }
+
+        /* ========== Video Player Modal ========== */
+        .modal-overlay {
+            position: fixed; inset: 0; z-index: 9999;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex; align-items: center; justify-content: center;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            animation: fadeIn .2s ease;
+        }
+        .modal-overlay.closing { animation: fadeOut .2s ease; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+
+        .modal-player {
+            width: 1150px; max-width: 95vw;
+            background: #000; border-radius: 12px;
+            overflow: hidden; position: relative;
+            box-shadow: 0 12px 48px rgba(0,0,0,.7);
+            animation: scaleIn .25s ease;
+        }
+        .modal-overlay.closing .modal-player { animation: scaleOut .2s ease; }
+        @keyframes scaleIn { from { transform: scale(.93); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        @keyframes scaleOut { from { transform: scale(1); opacity: 1; } to { transform: scale(.93); opacity: 0; } }
+
+        .modal-player video {
+            width: 100%; display: block;
+            aspect-ratio: 16 / 9;
+            background: #000;
+        }
+        .modal-player .modal-title {
+            padding: 10px 16px; background: #F3F5F9;
+            color: #0F172A; font-size: 14px; font-weight: 600;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .modal-player .modal-title .close-btn {
+            background: none; border: none; color: rgba(15, 23, 42, .45); font-size: 20px;
+            cursor: pointer; padding: 0 4px; line-height: 1;
+        }
+        .modal-player .modal-title .close-btn:hover { color: #FF6B6B; }
+
+        /* ========== Pagination ========== */
+        .pagination-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 28px 0 24px;
+            margin-top: 4px;
+        }
+        .pagination-btn {
+            padding: 7px 20px; border-radius: 6px; border: none; font-size: 13px;
+            font-family: inherit; cursor: pointer; transition: background .2s, opacity .2s;
+            background: #EAECEF; color: #0F172A; user-select: none; font-weight: 500;
+        }
+        .pagination-btn:hover:not(:disabled) { background: #DDE0E4; color: #0F172A; }
+        .pagination-btn:disabled { opacity: .3; cursor: not-allowed; }
+        .pagination-info {
+            padding: 5px 14px; border-radius: 6px; background: #F3F5F9;
+            color: rgba(15, 23, 42, .55); font-size: 13px; white-space: nowrap; user-select: none;
+        }
+        .pagination-info .num { color: #0F172A; font-weight: 600; }
+
+        @media (max-width: 1100px) { .section-row { grid-template-columns: repeat(4, 1fr); } }
+        @media (max-width: 800px)  { .section-row { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 600px) {
+            .tab-item { padding: 0 14px; font-size: 13px; }
+            .scroll-btn { width: 28px; }
+            .main-content { padding: 12px; margin-top: 52px; }
+            .video-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+            .section-row { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        }
+        @media (max-width: 400px) { .section-row { grid-template-columns: repeat(2, 1fr); gap: 6px; } }
+    </style>
+</head>
+<body>
+
+<nav class="nav-wrapper">
+    <div class="nav-container">
+        <button class="scroll-btn" id="scrollLeft">‹</button>
+        <div class="tabs-viewport" id="tabsViewport">
+            <div class="tabs-track" id="tabsTrack"></div>
+        </div>
+        <button class="scroll-btn" id="scrollRight">›</button>
+    </div>
+</nav>
+
+<main class="main-content" id="mainContent">
+    <div class="panel" id="panelHome" style="display:none"></div>
+    <div class="panel" id="panelLatest" style="display:none"></div>
+    <div class="panel" id="panelGrid" style="display:none"></div>
+    <div class="panel" id="panelInit"><div class="content-placeholder"><div class="spinner"></div></div></div>
+</main>
+
+<div class="modal-overlay" id="modalOverlay" style="display:none">
+    <div class="modal-player">
+        <div class="modal-title">
+            <span id="modalTitle">加载中...</span>
+            <button class="close-btn" id="modalCloseBtn">✕</button>
+        </div>
+        <video id="modalVideo" controls autoplay playsinline muted></video>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script>
+// ============================================================
+// 1. 配置
+// ============================================================
+const CONFIG = {
+    HOST: 'https://daf.e79jtyhi.com:52000',
+    CHANNEL: 'dh4',
+    FP_SEED_KEY: 'fingerprint_seed',
+    TOKEN_CACHE_KEY: 'token_cache',
+    AUTH: {
+        LOGIN: 'https://rft.qy2753c3.com:25118/api-user/login/fingerprint',
+        REFRESH: 'https://rft.qy2753c3.com:25118/api-user/login/refresh_token',
+    },
+    CORS_PROXY: 'https://corsproxy.io/?url=',
+    USE_CORS_PROXY: false,
+    IMAGE_KEY_ENC: 'H0Z%7n#k$H8*M7xSE^N@8xXZPG*RZ&wY',
+    IMAGE_KEY_LIVE: 'f5d965df75336270',
+    IMAGE_IV_LIVE: '97b60394abc2fbe1',
+    HEADERS: {
+        accept: '*/*',
+        'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    },
+};
+
+// ============================================================
+// 2. 工具函数
+// ============================================================
+function base64ToBytes(b64) {
+    let p = b64; const pad = b64.length % 4;
+    if (pad) p += '='.repeat(4 - pad);
+    const bin = atob(p); const b = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+    return b;
+}
+/** 高性能 shiftString：分块 + Uint16Array，避免大量字符串拼接触发 GC */
+function shiftString(s, delta) {
+    const len = s.length; let r = '';
+    const CHUNK = 32768;
+    for (let i = 0; i < len; i += CHUNK) {
+        const chunk = s.substring(i, Math.min(i + CHUNK, len));
+        const cLen = chunk.length;
+        const chars = new Uint16Array(cLen);
+        for (let j = 0; j < cLen; j++) chars[j] = chunk.charCodeAt(j) + delta;
+        r += String.fromCharCode.apply(String, chars);
+    }
+    return r;
+}
+const _htmlEscMap = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
+function escapeHtml(s) { if (!s) return ''; return String(s).replace(/[&<>"']/g, c => _htmlEscMap[c]); }
+
+// ============================================================
+// 3. 接口解密（MasterKey 缓存，优先在主线程解密保证稳定性）
+// ============================================================
+const masterKeyCache = new Map();
+async function getMasterKey(keyStr) {
+    if (masterKeyCache.has(keyStr)) return masterKeyCache.get(keyStr);
+    const mk = await crypto.subtle.importKey('raw', new TextEncoder().encode(keyStr), { name: 'PBKDF2' }, false, ['deriveKey']);
+    masterKeyCache.set(keyStr, mk);
+    return mk;
+}
+async function decryptResponse(resp) {
+    if (typeof resp.data !== 'string' || !resp.key) return resp;
+    try {
+        const shifted = shiftString(resp.data, -3);
+        const raw = base64ToBytes(shifted);
+        const salt = raw.slice(0, 16), iv = raw.slice(16, 28), ctw = raw.slice(28);
+        const tag = ctw.slice(-16), ct = ctw.slice(0, -16);
+        const mk = await getMasterKey(resp.key);
+        const aesKey = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 1000, hash: 'SHA-256' }, mk, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+        const combined = new Uint8Array(ct.length + tag.length);
+        combined.set(ct); combined.set(tag, ct.length);
+        const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, aesKey, combined);
+        const plain = new TextDecoder().decode(dec);
+        try { resp.data = JSON.parse(plain); } catch { resp.data = { plain_text: plain }; }
+    } catch (e) { console.warn('[解密] 失败:', e); }
+    return resp;
+}
+
+// ============================================================
+// 4. 图片解密 + IntersectionObserver 懒加载
+// ============================================================
+const imageBlobCache = new Map();
+const IMAGE_CACHE_MAX = 120; 
+const imageCacheOrder = [];   
+
+function cacheImage(url, blobUrl) {
+    if (imageBlobCache.has(url)) {
+        const idx = imageCacheOrder.indexOf(url);
+        if (idx > -1) imageCacheOrder.splice(idx, 1);
+    }
+    imageBlobCache.set(url, blobUrl);
+    imageCacheOrder.push(url);
+    if (imageCacheOrder.length > IMAGE_CACHE_MAX) {
+        const oldest = imageCacheOrder.shift();
+        const oldBlob = imageBlobCache.get(oldest);
+        if (oldBlob) { URL.revokeObjectURL(oldBlob); }
+        imageBlobCache.delete(oldest);
+    }
+    return blobUrl;
+}
+
+// 全局单例图片解密 Key
+let globalImageKey = null;
+async function getImageKey() {
+    if (globalImageKey) return globalImageKey;
+    globalImageKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(CONFIG.IMAGE_KEY_ENC), { name: 'AES-CBC' }, false, ['decrypt']);
+    return globalImageKey;
+}
+
+async function decryptEncImage(encData) {
+    const iv = encData.slice(0, 16), ciphertext = encData.slice(16);
+    const key = await getImageKey();
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, key, ciphertext);
+    const dec = new Uint8Array(decrypted);
+    return dec.slice(0, dec.length - dec[dec.length - 1]);
+}
+
+async function loadEncryptedImage(url) {
+    if (imageBlobCache.has(url)) {
+        const blobUrl = imageBlobCache.get(url);
+        const idx = imageCacheOrder.indexOf(url);
+        if (idx > -1) { imageCacheOrder.splice(idx, 1); imageCacheOrder.push(url); }
+        return blobUrl;
+    }
+    try {
+        const fetchUrl = CONFIG.USE_CORS_PROXY ? CONFIG.CORS_PROXY + encodeURIComponent(url) : url;
+        const resp = await fetch(fetchUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const encData = await resp.arrayBuffer();
+        const decrypted = await decryptEncImage(new Uint8Array(encData));
+        let mime = 'image/jpeg';
+        if (url.includes('.png')) mime = 'image/png';
+        else if (url.includes('.gif')) mime = 'image/gif';
+        else if (url.includes('.webp')) mime = 'image/webp';
+        const blob = new Blob([decrypted], { type: mime });
+        const blobUrl = URL.createObjectURL(blob);
+        return cacheImage(url, blobUrl);
+    } catch (e) { console.warn('[图片] 解密失败:', url.slice(-30), e.message); return null; }
+}
+
+async function loadImageForImg(img, url) {
+    if (img.dataset.loaded === 'true') return;
+    img.dataset.loaded = 'true';
+
+    try {
+        const blobUrl = await loadEncryptedImage(url);
+        if (blobUrl && img.parentNode) {
+            img.src = blobUrl;
+            if ('decode' in img) {
+                img.decode().then(() => img.classList.add('loaded')).catch(() => {});
+            } else {
+                img.classList.add('loaded');
+            }
+        } else {
+            img.dataset.loaded = 'false';
+        }
+    } catch(e) {
+        img.dataset.loaded = 'false';
+    } finally {
+        // 加载完立即解除观察，防止观察器膨胀
+        if (globalObserver && img) globalObserver.unobserve(img);
+    }
+}
+
+let globalObserver = null;
+function initGlobalObserver() {
+    if (globalObserver) return globalObserver;
+    globalObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            const img = entry.target;
+            const url = img.getAttribute('data-src');
+            if (url && !img.dataset.loaded) loadImageForImg(img, url);
+        });
+    }, { rootMargin: '0px 0px 200px 0px', threshold: 0.01 });
+    return globalObserver;
+}
+
+function observeImages(container) {
+    const observer = initGlobalObserver();
+    container.querySelectorAll('.thumb').forEach(thumb => {
+        const url = thumb.getAttribute('data-thumb-url');
+        if (!url) return;
+        let img = thumb.querySelector('.thumb-img');
+        if (!img) { img = document.createElement('img'); img.className = 'thumb-img'; thumb.appendChild(img); }
+        if (img.dataset.observed === 'true') return;
+        img.setAttribute('data-src', url);
+        img.dataset.observed = 'true';
+        observer.observe(img);
+    });
+}
+
+function afterRender(container) { if (container) observeImages(container); }
+
+/** 核心修复：从缓存恢复 HTML 时，彻底清除已加载状态 */
+function restoreFromCache(html) {
+    const panel = getActivePanel();
+    if (!panel) { main.innerHTML = html; unlockScroll(); return; }
+    panel.innerHTML = html;
+    panel.querySelectorAll('.thumb-img').forEach(img => {
+        img.removeAttribute('data-observed');
+        img.removeAttribute('data-loaded');
+        img.removeAttribute('src');
+        img.classList.remove('loaded');
+    });
+    afterRender(panel);
+    panel.dataset.rendered = 'true';
+    unlockScroll();
+}
+
+/** 获取当前激活的面板容器 */
+function getActivePanel() {
+    if (activeTabId === 1) return document.getElementById('panelHome');
+    const item = navList.find(n => n.id === activeTabId);
+    if (item?.type === 'latest') return document.getElementById('panelLatest');
+    return document.getElementById('panelGrid');
+}
+
+// ============================================================
+// 5. AbortController 管理（切换 tab 时取消旧请求）
+// ============================================================
+let currentAbort = null;
+function newAbort() {
+    if (currentAbort) currentAbort.abort();
+    currentAbort = new AbortController();
+    return currentAbort;
+}
+
+// ============================================================
+// 6. API 请求（支持 AbortController）
+// ============================================================
+async function apiRequest(method, url, opts = {}) {
+    const { params, data, token, signal } = opts;
+    let fullUrl = url;
+    if (params) {
+        const sp = new URLSearchParams();
+        for (const [k,v] of Object.entries(params)) sp.append(k, String(v));
+        fullUrl += (fullUrl.includes('?') ? '&' : '?') + sp.toString();
+    }
+    if (CONFIG.USE_CORS_PROXY) fullUrl = CONFIG.CORS_PROXY + encodeURIComponent(fullUrl);
+    const headers = { ...CONFIG.HEADERS };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const fetchOpts = { method, headers, signal };
+    if (method === 'POST' && data) {
+        fetchOpts.body = JSON.stringify(data);
+        if (!CONFIG.USE_CORS_PROXY) headers['Content-Type'] = 'application/json; charset=utf-8';
+    }
+    const resp = await fetch(fullUrl, fetchOpts);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    let result = await resp.json();
+    result = await decryptResponse(result);
+    return result;
+}
+
+// ============================================================
+// 7. Token 管理
+// ============================================================
+async function getToken() {
+    const cached = (() => {
+        try {
+            const raw = localStorage.getItem(CONFIG.TOKEN_CACHE_KEY);
+            if (!raw) return null;
+            const d = JSON.parse(raw);
+            return (d.accessToken && d.accessTokenTtl && d.createdAt) ? d : null;
+        } catch { return null; }
+    })();
+    if (cached && Date.now() < cached.createdAt + cached.accessTokenTtl * 1000) return cached.accessToken;
+    try {
+        if (cached?.refreshToken) await apiRequest('POST', CONFIG.AUTH.REFRESH, { data: { token: cached.refreshToken } }).catch(()=>{});
+        const fp = await generateFingerprint();
+        const resp = await apiRequest('POST', CONFIG.AUTH.LOGIN, { data: { fingerPrint: fp } });
+        if (resp.code === 200 && resp.data?.accessToken) {
+            const d = resp.data;
+            const info = { accessToken: d.accessToken, refreshToken: d.refreshToken, accessTokenTtl: d.accessTokenTtl, createdAt: Date.now() };
+            localStorage.setItem(CONFIG.TOKEN_CACHE_KEY, JSON.stringify(info));
+            return d.accessToken;
+        }
+    } catch (e) { console.warn('[Token] 获取失败:', e.message); }
+    return cached?.accessToken || null;
+}
+
+async function generateFingerprint() {
+    let seed = localStorage.getItem(CONFIG.FP_SEED_KEY);
+    if (!seed) {
+        const ts = Date.now();
+        const rnd = Array.from({ length: 12 }, () => Math.floor(Math.random()*16).toString(16)).join('');
+        seed = ts + '-' + rnd;
+        localStorage.setItem(CONFIG.FP_SEED_KEY, seed);
+    }
+    const ua = navigator.userAgent, lang = navigator.language, plat = navigator.platform;
+    const hw = navigator.hardwareConcurrency || 8, mtp = navigator.maxTouchPoints || 5;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const sw = screen?.width || 1080, sh = screen?.height || 2400, cd = screen?.colorDepth || 24, dpr = window.devicePixelRatio || 3.0;
+    const feat = `v1|${seed}|${ua}|${lang}|${plat}|${hw}|${mtp}|${tz}|${sw}x${sh}|${cd}|${dpr}`;
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(feat));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+// ============================================================
+// 8. 业务接口 — 统一支持 AbortSignal
+// ============================================================
+const sig = () => ({ signal: currentAbort?.signal });
+async function fetchNavList(token) {
+    const resp = await apiRequest('GET', `${CONFIG.HOST}/api/v2/home/public/nav/list`, { params: { channel: CONFIG.CHANNEL, cate: 'video_long' }, token: token || undefined, ...sig() });
+    return resp?.data?.list || [];
+}
+async function fetchVideos(token, item, page = 1, limit = 24) {
+    const resp = await apiRequest('GET', `${CONFIG.HOST}/api/v2/home/public/video/list`, { params: { channel: CONFIG.CHANNEL, page, limit, type: item.type, typeId: item.tid }, token: token || undefined, ...sig() });
+    return { list: resp?.data?.list || [], total: resp?.data?.total || 0 };
+}
+async function fetchVideoList(token, extraParams) {
+    const resp = await apiRequest('GET', `${CONFIG.HOST}/api/v2/home/public/video/list`, { params: { channel: CONFIG.CHANNEL, ...extraParams }, token: token || undefined, ...sig() });
+    return { list: resp?.data?.list || [], total: resp?.data?.total || 0 };
+}
+async function fetchLatestVideos(token) {
+    const resp = await apiRequest('GET', `${CONFIG.HOST}/api/video/home`, { params: { channel: CONFIG.CHANNEL }, token: token || undefined, ...sig() });
+    return resp?.data || [];
+}
+async function fetchHomeIndex(token) {
+    const resp = await apiRequest('GET', `${CONFIG.HOST}/api/v2/home/public/video/home/index`, { params: { channel: CONFIG.CHANNEL, videoType: '1' }, token: token || undefined, ...sig() });
+    return resp?.data?.list || [];
+}
+async function fetchVideoDetail(token, videoId, signal) {
+    const resp = await apiRequest('GET', `${CONFIG.HOST}/api/v2/home/public/video/long/detail`, { params: { channel: CONFIG.CHANNEL, id: videoId }, token: token || undefined, signal });
+    return resp?.data || null;
+}
+
+// ============================================================
+// 9. DOM 引用 & 状态
+// ============================================================
+const track = document.getElementById('tabsTrack');
+const viewport = document.getElementById('tabsViewport');
+const btnLeft = document.getElementById('scrollLeft');
+const btnRight = document.getElementById('scrollRight');
+const main = document.getElementById('mainContent');
+
+let navList = [];
+let activeTabId = 1;
+let currentToken = null;
+
+// 滚动监听：导航栏毛玻璃效果
+const navWrapper = document.querySelector('.nav-wrapper');
+function handleNavScroll() {
+    if (window.scrollY > 0) {
+        navWrapper.classList.add('scrolled');
+    } else {
+        navWrapper.classList.remove('scrolled');
+    }
+}
+window.addEventListener('scroll', handleNavScroll, { passive: true });
+let pagination = { page: 1, total: 0, pageSize: 24, navItem: null };
+
+// 页面缓存（LRU 限制 20 项，防内存膨胀）
+const pageCache = new Map();
+const PAGE_CACHE_MAX = 20;
+const pageCacheOrder = [];
+function pageCacheSet(key, val) {
+    if (pageCache.has(key)) { const i = pageCacheOrder.indexOf(key); if (i>-1) pageCacheOrder.splice(i,1); }
+    pageCache.set(key, val);
+    pageCacheOrder.push(key);
+    if (pageCacheOrder.length > PAGE_CACHE_MAX) {
+        const oldest = pageCacheOrder.shift();
+        pageCache.delete(oldest);
+    }
+}
+const LATEST_CACHE_KEY = '_latest';
+const HOME_CACHE_KEY = '_home';
+
+let playerHls = null;
+let videoAbort = null; 
+const modalOverlay = document.getElementById('modalOverlay');
+const modalVideo = document.getElementById('modalVideo');
+const modalTitle = document.getElementById('modalTitle');
+
+function closePlayer() {
+    if (videoAbort) { videoAbort.abort(); videoAbort = null; }
+    if (playerHls) { playerHls.destroy(); playerHls = null; }
+    modalVideo.pause(); modalVideo.removeAttribute('src');
+    modalVideo.load();
+    modalOverlay.style.display = 'none';
+    document.body.style.overflow = '';
+}
+modalOverlay?.addEventListener('click', (e) => {
+    if (e.target === modalOverlay) closePlayer();
+});
+document.getElementById('modalCloseBtn')?.addEventListener('click', closePlayer);
+
+async function openPlayer(videoId, title) {
+    modalTitle.textContent = title || '加载中...';
+    modalOverlay.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+
+    videoAbort = new AbortController();
+    const signal = videoAbort.signal;
+
+    try {
+        const data = await fetchVideoDetail(currentToken, videoId, signal);
+        if (signal.aborted || modalOverlay.style.display === 'none') return;
+        if (!data) { modalTitle.textContent = '加载失败'; return; }
+        const playUrl = data.play_hls_url || (data.href ? CONFIG.HOST + data.href : '');
+        if (!playUrl) { modalTitle.textContent = '暂无播放地址'; return; }
+        modalTitle.textContent = data.title || title;
+        if (modalVideo.canPlayType('application/vnd.apple.mpegurl')) {
+            modalVideo.src = playUrl;
+        } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+            if (playerHls) playerHls.destroy();
+            playerHls = new Hls();
+            playerHls.loadSource(playUrl);
+            playerHls.attachMedia(modalVideo);
+        } else {
+            modalTitle.textContent = '浏览器不支持 HLS 播放';
+        }
+    } catch(e) {
+        if (e.name === 'AbortError') return;
+        console.error('[播放]', e);
+        if (modalOverlay.style.display !== 'none') modalTitle.textContent = '播放失败: ' + e.message;
+    } finally {
+        videoAbort = null;
+    }
+}
+
+// 滚动控制（currentTX 变量追踪，避免正则高频解析 style.transform）
+let currentTX = 0;
+function getMaxScroll() { return Math.max(0, track.scrollWidth - viewport.clientWidth); }
+function setTX(x, anim) {
+    const max = getMaxScroll();
+    currentTX = Math.min(0, Math.max(-max, x));
+    requestAnimationFrame(() => {
+        if (!anim) track.style.transition = 'none';
+        track.style.transform = `translateX(${currentTX}px)`;
+        if (!anim) { track.offsetHeight; track.style.transition = ''; }
+        updateBtns();
+    });
+}
+function scrollBy(d) { setTX(currentTX + d); }
+function updateBtns() {
+    const x = currentTX, max = getMaxScroll();
+    btnLeft.classList.toggle('hidden', x >= -1);
+    btnRight.classList.toggle('hidden', x <= -max + 1 || max <= 0);
+}
+let dragging = false, sx = 0, stx = 0;
+function ds(cx) { dragging = true; sx = cx; stx = currentTX; track.classList.add('dragging'); }
+function dm(cx) { if (dragging) setTX(stx + (cx - sx)); }
+function de() { if (!dragging) return; dragging = false; track.classList.remove('dragging'); }
+viewport.addEventListener('touchstart', e => ds(e.touches[0].clientX), { passive: true });
+viewport.addEventListener('touchmove', e => dm(e.touches[0].clientX), { passive: true });
+viewport.addEventListener('touchend', de); viewport.addEventListener('touchcancel', de);
+let md = false;
+viewport.addEventListener('mousedown', e => { md = true; ds(e.clientX); });
+window.addEventListener('mousemove', e => { if (md) dm(e.clientX); });
+window.addEventListener('mouseup', () => { if (md) { md = false; de(); } });
+viewport.addEventListener('wheel', e => { if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) { scrollBy(-e.deltaX); e.preventDefault(); } }, { passive: false });
+btnLeft.addEventListener('click', () => scrollBy(220));
+btnRight.addEventListener('click', () => scrollBy(-220));
+let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { const max = getMaxScroll(); const x = currentTX; if (x < -max) setTX(-max); updateBtns(); }, 100); });
+
+// 内容区左右滑动切换 tab
+let swipeStartX = 0, swipeStartY = 0, swiping = false;
+main.addEventListener('touchstart', (e) => { swiping = true; swipeStartX = e.touches[0].clientX; swipeStartY = e.touches[0].clientY; }, { passive: true });
+main.addEventListener('touchmove', (e) => {
+    if (!swiping) return;
+    const dx = e.touches[0].clientX - swipeStartX;
+    const dy = e.touches[0].clientY - swipeStartY;
+    if (Math.abs(dy) > Math.abs(dx)) { swiping = false; return; }
+}, { passive: true });
+main.addEventListener('touchend', (e) => {
+    if (!swiping) return;
+    swiping = false;
+    const dx = e.changedTouches[0].clientX - swipeStartX;
+    const dy = e.changedTouches[0].clientY - swipeStartY;
+    if (Math.abs(dy) > Math.abs(dx) * 1.2) return;
+    if (Math.abs(dx) < 60) return;
+    const currIdx = navList.findIndex(n => n.id === activeTabId);
+    if (currIdx === -1) return;
+    if (dx > 0 && currIdx > 0) {
+        switchToTab(navList[currIdx - 1]);
+    } else if (dx < 0 && currIdx < navList.length - 1) {
+        switchToTab(navList[currIdx + 1]);
+    }
+}, { passive: true });
+
+function lockScroll() { document.body.style.overflow = 'hidden'; }
+function unlockScroll() { document.body.style.overflow = ''; }
+
+// ============================================================
+// 10. 渲染组件
+// ============================================================
+function getPanelOrMain() { return getActivePanel() || main; }
+function showError(title, detail, hint, showProxyBtn) {
+    getPanelOrMain().innerHTML = `<div class="content-placeholder"><div class="icon">⚠️</div><div class="error-box"><div class="err-title">${escapeHtml(title)}</div><div class="err-detail">${escapeHtml(detail)}</div>${hint ? `<div class="err-hint">💡 ${hint}</div>` : ''}<div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="location.reload()">重新加载</button>${showProxyBtn ? `<button class="btn btn-secondary" onclick="retryWithCORSProxy()">🔄 使用 CORS 代理重试</button>` : ''}</div></div></div>`;
+    unlockScroll();
+}
+function retryWithCORSProxy() { CONFIG.USE_CORS_PROXY = true; bootstrap(); }
+function showPlaceholder(item, msg) {
+    getPanelOrMain().innerHTML = `<div class="content-placeholder"><div class="icon">📂</div><div><strong>${escapeHtml(item.title || '')}</strong></div><div class="sub">${msg || '暂无内容'}</div></div>`;
+    unlockScroll();
+}
+
+function renderSkeletonRow(count = 5) {
+    let html = '<div class="section-row">';
+    for (let i = 0; i < count; i++) {
+        html += `<div class="skeleton-card"><div class="thumb-skeleton"></div><div class="info-skeleton"><div class="line"></div><div class="line"></div></div></div>`;
+    }
+    html += '</div>';
+    return html;
+}
+
+function renderCardRow(list) {
+    let html = '<div class="section-row">';
+    (list || []).forEach(v => {
+        const url = v.upload_thumb || v.thumb || '', label = v.label || '';
+        html += `<div class="card" data-video-id="${v.id}" data-video-title="${escapeHtml(v.title)}"><div class="thumb" data-thumb-url="${escapeHtml(url)}"><img class="thumb-img" alt="${escapeHtml(v.title)}">${label ? `<span class="thumb-badge">${escapeHtml(label)}</span>` : ''}</div><div class="info"><div class="title">${escapeHtml(v.title)}</div><div class="meta">${v.author || ''}</div></div></div>`;
+    });
+    html += '</div>';
+    return html;
+}
+
+function createSectionElement(title, list) {
+    if (!list || !list.length) return null;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'home-section';
+    wrapper.innerHTML = `<div class="section-header"><div class="section-title">${escapeHtml(title)}</div></div>${renderCardRow(list)}`;
+    return wrapper;
+}
+
+main.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-video-id]');
+    if (!el) return;
+    const id = el.getAttribute('data-video-id');
+    const title = el.getAttribute('data-video-title');
+    if (id) openPlayer(id, title);
+});
+
+function clearSkeleton(container) {
+    container.querySelectorAll('.skel-section').forEach(el => el.remove());
+}
+
+/** 核心优化：扩充为24个卡片。完美填满桌面大屏视口，规避2行留白尴尬 */
+function renderSkeletonGrid(count = 24) {
+    let html = '<div class="video-grid">';
+    for (let i = 0; i < count; i++) {
+        html += `<div class="skeleton-card"><div class="thumb-skeleton" style="border-radius:12px"></div><div class="info-skeleton"><div class="line"></div><div class="line"></div></div></div>`;
+    }
+    html += '</div>';
+    return html;
+}
+
+// ============================================================
+// 11. 页面加载函数（修复骨架屏缓存污染与异步竞态判断）
+// ============================================================
+
+/** 首页（一次性 innerHTML 替换，减少 Reflow） */
+async function loadHomeContent() {
+    if (pageCache.has(HOME_CACHE_KEY)) { restoreFromCache(pageCache.get(HOME_CACHE_KEY)); return; }
+
+    const abortCtrl = newAbort();
+    const signal = abortCtrl.signal;
+
+    const panel = document.getElementById('panelHome');
+    let skelHtml = '<div class="home-content" id="homeContent">';
+    for (let i = 0; i < 4; i++) skelHtml += `<div class="home-section skel-section"><div class="section-header"><div class="section-title" style="opacity:.3">加载中...</div></div>${renderSkeletonRow(5)}</div>`;
+    skelHtml += '</div>';
+    panel.innerHTML = skelHtml;
+    unlockScroll();
+    const container = document.getElementById('homeContent');
+
+    try {
+        const pool = {};
+        const promises = [
+            fetchVideoList(currentToken, { page: '1', limit: '5', type: 'good', videoType: '1', typeId: '0' }).then(r => pool.pick = r.list).catch(()=>{}),
+            fetchVideoList(currentToken, { page: '1', limit: '10', type: 'hot', videoType: '1', typeId: '0' }).then(r => pool.hot = r.list).catch(()=>{}),
+            fetchVideoList(currentToken, { page: '1', limit: '10', type: 'last', typeId: '0' }).then(r => pool.last = r.list).catch(()=>{}),
+            fetchHomeIndex(currentToken).then(list => pool.groups = list).catch(()=>{}),
+        ];
+        await Promise.allSettled(promises);
+        if (signal.aborted) return;
+
+        // 离屏拼接真实数据，一次性 innerHTML 替换
+        let html = '';
+        if (pool.pick?.length) html += `<div class="home-section"><div class="section-header"><div class="section-title">每日精选</div></div>${renderCardRow(pool.pick)}</div>`;
+        if (pool.hot?.length) html += `<div class="home-section"><div class="section-header"><div class="section-title">热门推荐</div></div>${renderCardRow(pool.hot)}</div>`;
+        if (pool.last?.length) html += `<div class="home-section"><div class="section-header"><div class="section-title">最近更新</div></div>${renderCardRow(pool.last)}</div>`;
+        if (pool.groups?.length) pool.groups.forEach(g => { if (g.list?.length) html += `<div class="home-section"><div class="section-header"><div class="section-title">${escapeHtml(g.title || g.name || '')}</div></div>${renderCardRow(g.list)}</div>`; });
+
+        if (!html) {
+            container.innerHTML = '<div class="content-placeholder"><div class="icon">😵</div><div>暂无内容</div></div>';
+        } else {
+            container.innerHTML = html;
+            afterRender(container);
+        }
+        if (!signal.aborted) {
+            panel.dataset.rendered = 'true';
+            pageCacheSet(HOME_CACHE_KEY, container.outerHTML);
+        }
+    } catch(e) {
+        if (signal.aborted) return;
+        panel.innerHTML = `<div class="content-placeholder"><div class="icon">😵</div><div>首页加载失败</div><div class="sub">${escapeHtml(e.message)}</div></div>`;
+    }
+}
+
+/** 最新视频（分批渲染：首屏仅渲染 BATCH_SIZE 个板块，滚动触发加载后续） */
+const LATEST_BATCH_SIZE = 3;
+
+function loadLatestMore(container, sections, startIdx, signal, localSentinel, localObserver) {
+    if (signal.aborted || startIdx >= sections.length) return;
+    const end = Math.min(startIdx + LATEST_BATCH_SIZE, sections.length);
+    for (let i = startIdx; i < end; i++) {
+        if (signal.aborted) return;
+        const list = sections[i]?.list || [];
+        if (!list.length) continue;
+        const secEl = createSectionElement(sections[i].title || '', list);
+        if (secEl) container.appendChild(secEl);
+    }
+    afterRender(container);
+    if (signal.aborted) return;
+
+    // 如果还有更多，设置 sentinel 触发下一批
+    if (end < sections.length) {
+        if (localSentinel.parentNode) localSentinel.remove();
+        container.appendChild(localSentinel);
+        localObserver.disconnect();
+        localObserver.observe(localSentinel);
+    } else {
+        localObserver.disconnect();
+        if (localSentinel.parentNode) localSentinel.remove();
+        // 全部渲染完 → 缓存
+        const cacheContainer = container.cloneNode(true);
+        cacheContainer.querySelectorAll('.skel-section').forEach(el => el.remove());
+        pageCacheSet(LATEST_CACHE_KEY, cacheContainer.outerHTML);
+    }
+}
+
+async function loadLatestContent() {
+    if (pageCache.has(LATEST_CACHE_KEY)) { restoreFromCache(pageCache.get(LATEST_CACHE_KEY)); return; }
+
+    const abortCtrl = newAbort();
+    const signal = abortCtrl.signal;
+
+    const panel = document.getElementById('panelLatest');
+    panel.innerHTML = '<div class="home-content" id="latestContent">';
+    const container = document.getElementById('latestContent');
+
+    // 骨架屏占位
+    for (let i = 0; i < 4; i++) {
+        const sec = document.createElement('div');
+        sec.className = 'home-section skel-section';
+        sec.innerHTML = `<div class="section-header"><div class="section-title" style="opacity:.3">加载中...</div></div>${renderSkeletonRow(5)}`;
+        container.appendChild(sec);
+    }
+    unlockScroll();
+
+    try {
+        const sections = await fetchLatestVideos(currentToken);
+        if (signal.aborted) return;
+        if (!sections || !sections.length) { showPlaceholder({ title: '最新视频' }, '暂无数据'); return; }
+
+        clearSkeleton(container);
+
+        // 仅渲染前 BATCH_SIZE 个板块
+        const firstBatch = sections.slice(0, LATEST_BATCH_SIZE);
+        firstBatch.forEach(s => {
+            if (signal.aborted) return;
+            const list = s.list || [];
+            if (!list.length) return;
+            const secEl = createSectionElement(s.title || '', list);
+            if (secEl) container.appendChild(secEl);
+        });
+        afterRender(container);
+
+        if (signal.aborted) return;
+
+        // 如果还有更多板块，设置 sentinel 触发后续加载
+        let renderEnd = LATEST_BATCH_SIZE;
+        if (renderEnd < sections.length) {
+            const sentinel = document.createElement('div');
+            sentinel.style.height = '1px';
+            const observer = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting) {
+                    // 用当前已渲染到的位置 renderEnd 作为起始点，避免重复
+                    if (renderEnd < sections.length) {
+                        const prevEnd = renderEnd;
+                        renderEnd = Math.min(renderEnd + LATEST_BATCH_SIZE, sections.length);
+                        loadLatestMore(container, sections, prevEnd, signal, sentinel, observer);
+                    }
+                }
+            }, { rootMargin: '200px' });
+            loadLatestMore(container, sections, renderEnd, signal, sentinel, observer);
+            renderEnd = Math.min(renderEnd + LATEST_BATCH_SIZE, sections.length);
+        } else {
+            // 全部渲染完了，直接缓存
+            const cacheContainer = container.cloneNode(true);
+            cacheContainer.querySelectorAll('.skel-section').forEach(el => el.remove());
+            pageCacheSet(LATEST_CACHE_KEY, cacheContainer.outerHTML);
+        }
+        if (!signal.aborted) panel.dataset.rendered = 'true';
+    } catch(e) {
+        if (signal.aborted) return;
+        console.error(e);
+        panel.innerHTML = `<div class="content-placeholder"><div class="icon">😵</div><div>最新视频加载失败</div><div class="sub">${escapeHtml(e.message)}</div></div>`;
+    }
+}
+
+/** 分页 tab 网格（优化：使用局部 signal 隔离并发多标签高频连点导致的缓存错乱） */
+async function loadVideos(item, page) {
+    pagination.page = page;
+    pagination.navItem = item;
+
+    const cacheKey = `page_${item.id}_${page}`;
+    if (pageCache.has(cacheKey)) {
+        restoreFromCache(pageCache.get(cacheKey));
+        renderPagination();
+        return;
+    }
+
+    const abortCtrl = newAbort();
+    const signal = abortCtrl.signal;
+
+    const panel = document.getElementById('panelGrid');
+    panel.innerHTML = renderSkeletonGrid();
+    unlockScroll();
+    try {
+        const { list, total } = await fetchVideos(currentToken, item, page, pagination.pageSize);
+        if (signal.aborted) return;
+
+        pagination.total = total;
+        if (list.length) {
+            panel.dataset.rendered = 'true';
+            // 直接用 panel 渲染
+            let html = '<div class="video-grid">';
+            list.forEach(v => {
+                const url = v.upload_thumb || v.thumb || '', label = v.label || '';
+                html += `<div class="video-card" data-video-id="${v.id}" data-video-title="${escapeHtml(v.title)}"><div class="thumb" data-thumb-url="${escapeHtml(url)}"><img class="thumb-img" alt="${escapeHtml(v.title)}">${label ? `<span class="thumb-badge">${escapeHtml(label)}</span>` : ''}</div><div class="info"><div class="title">${escapeHtml(v.title)}</div><div class="meta">${v.author || ''}${v.watchtimes ? ' · ' + v.watchtimes + '次' : ''}</div></div></div>`;
+            });
+            html += '</div>';
+            panel.innerHTML = html;
+            afterRender(panel);
+            const div = document.createElement('div'); div.id = 'pagination'; div.className = 'pagination-wrap';
+            panel.appendChild(div);
+            renderPagination();
+            if (!signal.aborted) pageCacheSet(cacheKey, panel.innerHTML);
+        } else showPlaceholder(item, '暂无内容');
+    } catch(e) {
+        if (signal.aborted) return;
+        showPlaceholder(item, '加载失败: ' + e.message);
+    }
+}
+
+function getTotalPages() { return Math.max(1, Math.ceil(pagination.total / pagination.pageSize)); }
+function renderPagination() {
+    const totalPages = getTotalPages();
+    const el = document.getElementById('pagination');
+    if (!el) return;
+    el.innerHTML = `<button class="pagination-btn" id="pagPrev" ${pagination.page <= 1 ? 'disabled' : ''}>上一页</button><span class="pagination-info"><span class="num">${pagination.page}</span> / <span class="num">${totalPages}</span></span><button class="pagination-btn" id="pagNext" ${pagination.page >= totalPages ? 'disabled' : ''}>下一页</button>`;
+    document.getElementById('pagPrev')?.addEventListener('click', () => { if (pagination.page > 1) { pagination.page--; window.scrollTo(0, 0); pagination.navItem && loadVideos(pagination.navItem, pagination.page); } });
+    document.getElementById('pagNext')?.addEventListener('click', () => { if (pagination.page < totalPages && pagination.navItem) { pagination.page++; window.scrollTo(0, 0); loadVideos(pagination.navItem, pagination.page); } });
+}
+
+// ============================================================
+// 12. Tab 切换（容器常驻，仅切换 display，避免 DOM 销毁）
+// ============================================================
+function navigateToTab(item) {
+    if (currentAbort) currentAbort.abort();
+
+    // 立即强制回顶部，不受旧内容高度影响
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+
+    // 隐藏所有容器
+    document.querySelectorAll('.panel').forEach(p => p.style.display = 'none');
+
+    let panel;
+    if (item.type === 'home') {
+        panel = document.getElementById('panelHome');
+        panel.style.display = 'block';
+        if (!panel.dataset.rendered) { lockScroll(); loadHomeContent(); }
+        else { unlockScroll(); window.scrollTo(0, 0); }
+    } else if (item.type === 'latest') {
+        panel = document.getElementById('panelLatest');
+        panel.style.display = 'block';
+        if (!panel.dataset.rendered) { lockScroll(); loadLatestContent(); }
+        else { unlockScroll(); window.scrollTo(0, 0); }
+    } else {
+        panel = document.getElementById('panelGrid');
+        panel.style.display = 'block';
+        pagination.page = 1;
+        loadVideos(item, 1);
+    }
+    // 再次确保滚动到顶部（新内容渲染后也可能撑起高度）
+    setTimeout(() => window.scrollTo(0, 0), 50);
+}
+
+function renderTabs() {
+    track.innerHTML = '';
+    navList.forEach(item => {
+        const btn = document.createElement('button');
+        btn.className = 'tab-item' + (item.id === activeTabId ? ' active' : '');
+        btn.textContent = item.title;
+        btn.dataset.id = item.id;
+        btn.addEventListener('click', e => { e.stopPropagation(); onTabClick(item); });
+        track.appendChild(btn);
+    });
+    requestAnimationFrame(() => { const el = track.querySelector('.tab-item.active'); if (el) scrollTabTo(el, 0); updateBtns(); });
+}
+
+function onTabClick(item) {
+    if (item.id === activeTabId) return;
+    switchToTab(item);
+}
+
+function switchToTab(item) {
+    if (!item || item.id === activeTabId) return;
+    activeTabId = item.id;
+    document.querySelectorAll('.tab-item').forEach(el => el.classList.toggle('active', Number(el.dataset.id) === item.id));
+    if (document.querySelector('.tab-item.active')) scrollTabTo(document.querySelector('.tab-item.active'));
+    navigateToTab(item);
+}
+
+function scrollTabTo(el, dur) {
+    const cr = viewport.getBoundingClientRect();
+    const er = el.getBoundingClientRect();
+    const dl = er.left - cr.left, dr = er.right - cr.right;
+    let tx = currentTX;
+    if (dl < 0) tx = Math.min(0, tx - dl + 12);
+    else if (dr > 0) tx = tx - dr - 12;
+    setTX(tx, dur !== 0);
+}
+
+// ============================================================
+// 13. 启动
+// ============================================================
+async function bootstrap() {
+    console.log('[App] 启动... 协议:', window.location.protocol);
+    // 显示初始加载面板，待 navigateToTab 时会自动切换到正确面板
+    document.querySelectorAll('.panel').forEach(p => p.style.display = 'none');
+    document.getElementById('panelInit').style.display = 'block';
+    lockScroll();
+    try {
+        currentToken = await getToken();
+        navList = await fetchNavList(currentToken);
+        if (!navList || navList.length === 0) throw new Error('导航列表为空，请检查网络或刷新重试');
+        const homeIdx = navList.findIndex(n => n.type === 'home');
+        if (homeIdx !== -1) navList.splice(homeIdx + 1, 0, { id: 99, title: '最新视频', type: 'latest', tid: 0 });
+        else navList.push({ id: 99, title: '最新视频', type: 'latest', tid: 0 });
+        renderTabs();
+        const home = navList.find(n => n.id === activeTabId) || navList[0];
+        navigateToTab(home);
+    } catch (e) {
+        console.error(e);
+        let detail = e.message, hint = '', showProxy = !CONFIG.USE_CORS_PROXY;
+        if (detail.includes('Failed to fetch') || detail.includes('NetworkError')) {
+            if (window.location.protocol === 'file:') hint = 'file:// 协议无法跨域。请点击下方按钮使用代理，或运行 python server.py 启动本地服务器。';
+            else hint = 'CORS 跨域问题。请点击下方按钮使用代理，或运行 python server.py 启动本地服务器。';
+        } else if (detail.includes('fingerprint') || detail.includes('login')) hint = '指纹登录接口异常';
+        showError('启动失败', detail, hint, showProxy);
+    }
+}
+bootstrap();
+</script>
+</body>
+</html>

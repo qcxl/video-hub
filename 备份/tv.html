@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Live TV · 电视直播</title>
+
+  <!-- HLS.js for live streaming -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+  <style>
+    /* ============================================================
+       CSS Custom Properties (命名空间 tv-)
+       ============================================================ */
+    :root {
+      --tv-bg: #000000;
+      --tv-bg-drawer: #0d0d0d;
+      --tv-bg-overlay: rgba(0, 0, 0, 0.6);
+      --tv-bg-hover: rgba(255, 255, 255, 0.10);
+      --tv-bg-active: rgba(229, 9, 20, 0.20);
+      --tv-accent: #E50914;
+      --tv-accent-hover: #F40612;
+      --tv-text-primary: #ffffff;
+      --tv-text-secondary: rgba(255, 255, 255, 0.70);
+      --tv-text-tertiary: rgba(255, 255, 255, 0.45);
+      --tv-border: rgba(255, 255, 255, 0.08);
+      --tv-radius: 8px;
+      --tv-radius-sm: 4px;
+      --tv-transition: .25s cubic-bezier(.25, .1, .25, 1);
+      --tv-drawer-width: 380px;
+      --tv-z-drawer: 1000;
+      --tv-z-overlay: 900;
+      --tv-z-player: 1;
+      --tv-z-init: 500;
+    }
+
+    /* ============================================================
+       Reset & Base
+       ============================================================ */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+      background: var(--tv-bg);
+      color: var(--tv-text-primary);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+    a { color: inherit; text-decoration: none; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .15); border-radius: 4px; }
+
+    /* ============================================================
+       Init Overlay (首次加载 / 数据源选择)
+       ============================================================ */
+    .tv-init-overlay {
+      position: fixed; inset: 0; z-index: var(--tv-z-init);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: var(--tv-bg);
+      transition: opacity .4s ease;
+    }
+    .tv-init-overlay.tv-hidden { opacity: 0; pointer-events: none; }
+
+    .tv-init-logo {
+      font-size: 52px; margin-bottom: 20px;
+      width: 80px; height: 80px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 20px;
+      background: linear-gradient(135deg, #E50914, #B20710);
+      box-shadow: 0 8px 32px rgba(229, 9, 20, .35);
+    }
+    .tv-init-title { font-size: 26px; font-weight: 700; letter-spacing: 1px; margin-bottom: 8px; }
+    .tv-init-sub { font-size: 14px; color: var(--tv-text-tertiary); margin-bottom: 36px; }
+
+    .tv-init-sources {
+      display: flex; flex-wrap: wrap;
+      justify-content: center; gap: 12px;
+      max-width: 640px; padding: 0 20px;
+    }
+    .tv-init-source-btn {
+      padding: 10px 22px; border-radius: var(--tv-radius);
+      font-size: 14px; font-weight: 500;
+      background: rgba(255, 255, 255, .08);
+      color: var(--tv-text-primary);
+      transition: background var(--tv-transition), transform .2s;
+      border: 1px solid var(--tv-border);
+    }
+    .tv-init-source-btn:hover { background: rgba(255, 255, 255, .14); transform: translateY(-1px); }
+    .tv-init-source-btn:active { transform: translateY(0); }
+    .tv-init-error {
+      color: var(--tv-accent); font-size: 14px;
+      margin-top: 20px; text-align: center; max-width: 480px;
+      line-height: 1.6;
+    }
+
+    /* ============================================================
+       Player Container (全屏)
+       ============================================================ */
+    .tv-player-container {
+      position: fixed; inset: 0; z-index: var(--tv-z-player);
+      display: flex; align-items: center; justify-content: center;
+      background: var(--tv-bg);
+    }
+    .tv-player-container video {
+      width: 100%; height: 100%;
+      object-fit: contain;
+      outline: none;
+    }
+
+    /* ============================================================
+       Player Overlay (顶栏 + 底栏，鼠标移动时显示)
+       ============================================================ */
+    .tv-player-overlay {
+      position: fixed; inset: 0; z-index: 10;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .35s ease;
+    }
+    .tv-player-overlay.tv-visible {
+      opacity: 1;
+    }
+    .tv-player-overlay > * {
+      pointer-events: auto;
+    }
+
+    /* Top Bar */
+    .tv-top-bar {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 16px 24px;
+      display: flex; align-items: center; justify-content: space-between;
+      background: linear-gradient(180deg, rgba(0,0,0,.7), transparent);
+    }
+    .tv-top-bar-left {
+      display: flex; align-items: center; gap: 12px;
+      min-width: 0;
+    }
+    .tv-top-bar-live {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 3px 10px; border-radius: 100px;
+      background: var(--tv-accent); font-size: 11px; font-weight: 700;
+      letter-spacing: .5px; flex-shrink: 0;
+    }
+    .tv-top-bar-live::before {
+      content: ''; width: 6px; height: 6px;
+      border-radius: 50%; background: #fff;
+      animation: tv-pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes tv-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .3; }
+    }
+    .tv-top-bar-source {
+      font-size: 13px; color: var(--tv-text-secondary);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .tv-top-bar-sep {
+      color: var(--tv-text-tertiary); font-size: 12px;
+    }
+    .tv-top-bar-channel {
+      font-size: 14px; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .tv-top-bar-right {
+      display: flex; align-items: center; gap: 8px;
+      flex-shrink: 0;
+    }
+    .tv-top-bar-btn {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,.10);
+      font-size: 18px; transition: background .2s;
+    }
+    .tv-top-bar-btn:hover { background: rgba(255,255,255,.20); }
+
+    /* Bottom Bar */
+    .tv-bottom-bar {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      padding: 20px 24px;
+      display: flex; align-items: center; gap: 16px;
+      background: linear-gradient(0deg, rgba(0,0,0,.7), transparent);
+    }
+    .tv-bottom-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 8px 18px; border-radius: var(--tv-radius);
+      font-size: 13px; font-weight: 500;
+      background: rgba(255, 255, 255, .10);
+      transition: background var(--tv-transition);
+    }
+    .tv-bottom-btn:hover { background: rgba(255, 255, 255, .20); }
+    .tv-bottom-btn-primary {
+      background: var(--tv-accent);
+    }
+    .tv-bottom-btn-primary:hover { background: var(--tv-accent-hover); }
+    .tv-bottom-spacer { flex: 1; }
+
+    /* Loading indicator on player */
+    .tv-loading {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+      z-index: 5; pointer-events: none;
+    }
+    .tv-loading.tv-hidden { display: none; }
+    .tv-loading-spinner {
+      width: 40px; height: 40px;
+      border: 3px solid rgba(255,255,255,.12);
+      border-top-color: var(--tv-accent);
+      border-radius: 50%;
+      animation: tv-spin .8s linear infinite;
+    }
+    @keyframes tv-spin { to { transform: rotate(360deg); } }
+    .tv-loading-text { font-size: 13px; color: var(--tv-text-secondary); }
+
+    /* Error overlay on player */
+    .tv-error-overlay {
+      position: absolute; inset: 0; z-index: 6;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px; padding: 24px;
+    }
+    .tv-error-overlay.tv-hidden { display: none; }
+    .tv-error-icon { font-size: 40px; opacity: .6; }
+    .tv-error-title { font-size: 16px; font-weight: 600; color: var(--tv-text-primary); }
+    .tv-error-detail { font-size: 13px; color: var(--tv-text-tertiary); text-align: center; max-width: 360px; line-height: 1.5; }
+    .tv-error-retry {
+      margin-top: 8px; padding: 8px 24px; border-radius: var(--tv-radius);
+      font-size: 13px; font-weight: 500;
+      background: var(--tv-accent); color: #fff;
+      transition: background .2s;
+    }
+    .tv-error-retry:hover { background: var(--tv-accent-hover); }
+
+    /* Paused overlay (播放暂停时居中恢复按钮) */
+    .tv-paused-overlay {
+      position: absolute; inset: 0; z-index: 7;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px;
+      background: rgba(0, 0, 0, .35);
+      cursor: pointer;
+    }
+    .tv-paused-overlay.tv-hidden { display: none; }
+    .tv-paused-play-btn {
+      width: 64px; height: 64px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px; padding-left: 4px;
+      background: rgba(255, 255, 255, .15);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 2px solid rgba(255, 255, 255, .25);
+      color: #fff;
+      transition: background .2s, transform .15s;
+    }
+    .tv-paused-play-btn:hover { background: rgba(255, 255, 255, .25); transform: scale(1.06); }
+    .tv-paused-label {
+      font-size: 13px; color: rgba(255, 255, 255, .7);
+      font-weight: 500; letter-spacing: 1px;
+    }
+
+    /* ============================================================
+       Drawer (右侧滑入面板)
+       ============================================================ */
+    .tv-drawer-overlay {
+      position: fixed; inset: 0; z-index: var(--tv-z-overlay);
+      background: rgba(0, 0, 0, .5);
+      opacity: 0; pointer-events: none;
+      transition: opacity .3s ease;
+    }
+    .tv-drawer-overlay.tv-active { opacity: 1; pointer-events: auto; }
+
+    .tv-drawer {
+      position: fixed; top: 0; right: 0; bottom: 0;
+      width: var(--tv-drawer-width); max-width: 85vw;
+      z-index: var(--tv-z-drawer);
+      display: flex; flex-direction: column;
+      background: var(--tv-bg-drawer);
+      border-left: 1px solid var(--tv-border);
+      transform: translateX(100%);
+      transition: transform .35s cubic-bezier(.25, .1, .25, 1);
+    }
+    .tv-drawer.tv-active { transform: translateX(0); }
+
+    /* Drawer Header */
+    .tv-drawer-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px; flex-shrink: 0;
+      border-bottom: 1px solid var(--tv-border);
+    }
+    .tv-drawer-title { font-size: 16px; font-weight: 700; }
+    .tv-drawer-close {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; transition: background .2s;
+    }
+    .tv-drawer-close:hover { background: var(--tv-bg-hover); }
+
+    /* Source Tabs */
+    .tv-source-tabs {
+      display: flex; gap: 4px; overflow-x: auto;
+      padding: 12px 20px; flex-shrink: 0;
+      border-bottom: 1px solid var(--tv-border);
+      -webkit-overflow-scrolling: touch;
+    }
+    .tv-source-tab {
+      flex-shrink: 0; padding: 6px 14px; border-radius: 100px;
+      font-size: 12px; font-weight: 500;
+      color: var(--tv-text-secondary);
+      background: rgba(255, 255, 255, .06);
+      transition: background var(--tv-transition), color var(--tv-transition);
+      white-space: nowrap;
+    }
+    .tv-source-tab:hover { background: rgba(255, 255, 255, .12); color: var(--tv-text-primary); }
+    .tv-source-tab.tv-active {
+      background: var(--tv-accent); color: #fff;
+    }
+    .tv-source-tab.tv-loading-tab {
+      opacity: .5; pointer-events: none;
+    }
+    .tv-source-tab .tv-tab-badge {
+      display: inline-block; margin-left: 4px;
+      font-size: 10px; opacity: .6;
+    }
+
+    /* Channel List */
+    .tv-channel-list {
+      flex: 1; overflow-y: auto;
+      padding: 8px 0;
+      -webkit-overflow-scrolling: touch;
+    }
+    .tv-channel-item {
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 20px;
+      cursor: pointer;
+      transition: background var(--tv-transition);
+      border-left: 3px solid transparent;
+      min-height: 52px;
+    }
+    .tv-channel-item:hover { background: var(--tv-bg-hover); }
+    .tv-channel-item.tv-active {
+      background: var(--tv-bg-active);
+      border-left-color: var(--tv-accent);
+    }
+    .tv-channel-number {
+      width: 28px; text-align: right;
+      font-size: 12px; color: var(--tv-text-tertiary);
+      font-weight: 500; flex-shrink: 0;
+    }
+    .tv-channel-info { flex: 1; min-width: 0; }
+    .tv-channel-name {
+      font-size: 14px; font-weight: 500;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .tv-channel-name.tv-now-playing {
+      color: var(--tv-accent);
+    }
+    .tv-channel-meta {
+      font-size: 11px; color: var(--tv-text-tertiary);
+      margin-top: 2px;
+    }
+    .tv-channel-play-icon {
+      flex-shrink: 0; font-size: 14px;
+      color: var(--tv-text-tertiary);
+      opacity: 0; transition: opacity .2s;
+    }
+    .tv-channel-item.tv-active .tv-channel-play-icon,
+    .tv-channel-item:hover .tv-channel-play-icon { opacity: 1; }
+    .tv-channel-item.tv-active .tv-channel-play-icon { color: var(--tv-accent); }
+
+    /* Channel list empty/loading states */
+    .tv-channel-empty {
+      padding: 40px 20px; text-align: center;
+      color: var(--tv-text-tertiary); font-size: 14px;
+    }
+    .tv-channel-error {
+      padding: 24px 20px; text-align: center;
+      color: var(--tv-accent); font-size: 13px;
+      line-height: 1.6;
+    }
+    .tv-channel-skeleton {
+      padding: 12px 20px;
+      display: flex; align-items: center; gap: 14px;
+    }
+    .tv-channel-skeleton .tv-sk-box {
+      height: 14px; border-radius: var(--tv-radius-sm);
+      background: rgba(255,255,255,.06);
+      animation: tv-shimmer 1.4s infinite linear;
+      background-image: linear-gradient(90deg, rgba(255,255,255,.06) 0%, rgba(255,255,255,.10) 50%, rgba(255,255,255,.06) 100%);
+      background-size: 200% 100%;
+    }
+    @keyframes tv-shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ============================================================
+       Responsive
+       ============================================================ */
+    @media (max-width: 600px) {
+      :root { --tv-drawer-width: 100vw; }
+      .tv-top-bar { padding: 12px 16px; }
+      .tv-bottom-bar { padding: 12px 16px; }
+      .tv-bottom-bar .tv-bottom-spacer { display: none; }
+      .tv-bottom-btn { padding: 8px 14px; font-size: 12px; }
+      .tv-init-title { font-size: 22px; }
+      .tv-drawer-header { padding: 12px 16px; }
+      .tv-source-tabs { padding: 10px 16px; }
+      .tv-channel-item { padding: 10px 16px; }
+      .tv-channel-number { width: 22px; font-size: 11px; }
+    }
+
+    /* ============================================================
+       Utility
+       ============================================================ */
+    .tv-hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- ============================================================
+       Init Overlay — 首次加载选择数据源
+       ============================================================ -->
+  <div class="tv-init-overlay" id="tvInitOverlay">
+    <div class="tv-init-logo">📺</div>
+    <div class="tv-init-title">Live TV</div>
+    <div class="tv-init-sub">选择一个数据源开始观看电视直播</div>
+
+    <div class="tv-init-sources" id="tvInitSources">
+      <!-- 由 JS 渲染数据源按钮 -->
+    </div>
+
+    <div class="tv-init-error tv-hidden" id="tvInitError"></div>
+  </div>
+
+  <!-- ============================================================
+       Player Container
+       ============================================================ -->
+  <div class="tv-player-container" id="tvPlayerContainer">
+    <video id="tvVideoPlayer" playsinline></video>
+
+    <!-- Buffering -->
+    <div class="tv-loading" id="tvLoading">
+      <div class="tv-loading-spinner"></div>
+      <div class="tv-loading-text">正在加载直播流…</div>
+    </div>
+
+    <!-- Error -->
+    <div class="tv-error-overlay tv-hidden" id="tvErrorOverlay">
+      <div class="tv-error-icon">⚠️</div>
+      <div class="tv-error-title" id="tvErrorTitle">播放失败</div>
+      <div class="tv-error-detail" id="tvErrorDetail"></div>
+      <button class="tv-error-retry" id="tvErrorRetry">重试</button>
+    </div>
+
+    <!-- Paused (暂停时居中恢复按钮) -->
+    <div class="tv-paused-overlay tv-hidden" id="tvPausedOverlay">
+      <button class="tv-paused-play-btn" id="tvResumeBtn">▶</button>
+      <div class="tv-paused-label">已暂停</div>
+    </div>
+
+    <!-- Player Overlay (top bar + bottom bar) -->
+    <div class="tv-player-overlay" id="tvPlayerOverlay">
+      <!-- Top Bar -->
+      <div class="tv-top-bar">
+        <div class="tv-top-bar-left">
+          <span class="tv-top-bar-live">LIVE</span>
+          <span class="tv-top-bar-source" id="tvTopSource">—</span>
+          <span class="tv-top-bar-sep">/</span>
+          <span class="tv-top-bar-channel" id="tvTopChannel">请选择频道</span>
+        </div>
+        <div class="tv-top-bar-right">
+          <button class="tv-top-bar-btn" id="tvToggleDrawerBtn" title="频道列表">☰</button>
+        </div>
+      </div>
+
+      <!-- Bottom Bar -->
+      <div class="tv-bottom-bar">
+        <button class="tv-bottom-btn tv-bottom-btn-primary" id="tvOpenDrawerBtn">
+          ☰ 频道列表
+        </button>
+        <div class="tv-bottom-spacer"></div>
+        <button class="tv-bottom-btn" id="tvStopBtn">
+          ⏹ 停止播放
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Drawer (右侧滑入)
+       ============================================================ -->
+  <div class="tv-drawer-overlay" id="tvDrawerOverlay"></div>
+
+  <div class="tv-drawer" id="tvDrawer">
+    <!-- Header -->
+    <div class="tv-drawer-header">
+      <span class="tv-drawer-title">电视频道</span>
+      <button class="tv-drawer-close" id="tvDrawerClose">✕</button>
+    </div>
+
+    <!-- Source Tabs -->
+    <div class="tv-source-tabs" id="tvSourceTabs">
+      <!-- 由 JS 渲染 -->
+    </div>
+
+    <!-- Channel List -->
+    <div class="tv-channel-list" id="tvChannelList">
+      <!-- 由 JS 渲染 -->
+    </div>
+  </div>
+
+  <script>
+  /* ============================================================
+     TVApp — 命名空间：所有逻辑挂在此单例对象下
+     ============================================================ */
+  const TVApp = (function() {
+
+    /* ============================================================
+       1. CONFIG
+       ============================================================ */
+    const CONFIG = {
+      SOURCES_URL: 'https://gist.githubusercontent.com/qcxl/d3b00ab52a93e9bed0ab5d16306f6f08/raw/1cac1b322feee481b54df473e770bf50663160a4/live.json',
+      PROXY_BASE: 'https://live.24tv.cc.cd',
+      CACHE_PREFIX: 'tv_cache_',
+      CACHE_TTL: 10 * 60 * 1000, // 10 min
+    };
+
+    /* ============================================================
+       2. STATE
+       ============================================================ */
+    const state = {
+      sources: [],         // [{name, url}, ...]
+      channels: [],        // [{name, url}, ...]
+      activeSourceIdx: -1,  // index into sources[]
+      activeChannelIdx: -1, // index into channels[]
+      playerHls: null,
+      isDrawerOpen: false,
+      isOverlayVisible: true,
+      isPaused: false,      // 暂停状态
+      overlayTimer: null,
+    };
+
+    /* ============================================================
+       3. DOM CACHE
+       ============================================================ */
+    const $ = (sel) => document.querySelector(sel);
+    const $$ = (sel) => document.querySelectorAll(sel);
+
+    const dom = {};
+    function cacheDom() {
+      dom.initOverlay = $('#tvInitOverlay');
+      dom.initSources = $('#tvInitSources');
+      dom.initError = $('#tvInitError');
+      dom.playerContainer = $('#tvPlayerContainer');
+      dom.video = $('#tvVideoPlayer');
+      dom.loading = $('#tvLoading');
+      dom.errorOverlay = $('#tvErrorOverlay');
+      dom.errorTitle = $('#tvErrorTitle');
+      dom.errorDetail = $('#tvErrorDetail');
+      dom.errorRetry = $('#tvErrorRetry');
+      dom.pausedOverlay = $('#tvPausedOverlay');
+      dom.resumeBtn = $('#tvResumeBtn');
+      dom.playerOverlay = $('#tvPlayerOverlay');
+      dom.topSource = $('#tvTopSource');
+      dom.topChannel = $('#tvTopChannel');
+      dom.toggleDrawerBtn = $('#tvToggleDrawerBtn');
+      dom.openDrawerBtn = $('#tvOpenDrawerBtn');
+      dom.stopBtn = $('#tvStopBtn');
+      dom.drawerOverlay = $('#tvDrawerOverlay');
+      dom.drawer = $('#tvDrawer');
+      dom.drawerClose = $('#tvDrawerClose');
+      dom.sourceTabs = $('#tvSourceTabs');
+      dom.channelList = $('#tvChannelList');
+    }
+
+    /* ============================================================
+       4. UTILS
+       ============================================================ */
+    const utils = {
+      /** Encode URL for proxy — 使用 encodeURI 保留 :// 和 /，只编码非 ASCII */
+      encodeTarget(url) {
+        return encodeURI(url);
+      },
+
+      /** Build proxy URL — 格式: https://live.24tv.cc.cd/?target=http://... */
+      proxyUrl(url) {
+        return `${CONFIG.PROXY_BASE}/?target=${this.encodeTarget(url)}`;
+      },
+
+      /** Simple localStorage cache */
+      cacheGet(key) {
+        try {
+          const raw = localStorage.getItem(CONFIG.CACHE_PREFIX + key);
+          if (!raw) return null;
+          const d = JSON.parse(raw);
+          return (Date.now() - d.ts < CONFIG.CACHE_TTL) ? d.data : null;
+        } catch { return null; }
+      },
+      cacheSet(key, data) {
+        try {
+          localStorage.setItem(CONFIG.CACHE_PREFIX + key, JSON.stringify({ data, ts: Date.now() }));
+        } catch { /* quota exceeded — silently ignore */ }
+      },
+
+      /** Escape HTML */
+      esc(str) {
+        if (!str) return '';
+        return String(str).replace(/[&<>"']/g, c =>
+          ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] || c)
+        );
+      },
+
+      /** Debounce */
+      debounce(fn, ms) {
+        let timer;
+        return (...args) => {
+          clearTimeout(timer);
+          timer = setTimeout(() => fn(...args), ms);
+        };
+      },
+
+      /** Parse channel list response — handles both JSON and PHP output */
+      parseChannels(text) {
+        // Try JSON first
+        try {
+          const data = JSON.parse(text);
+          if (Array.isArray(data)) return data;
+          if (data.data && Array.isArray(data.data)) return data.data;
+          if (data.list && Array.isArray(data.list)) return data.list;
+          if (data.channels && Array.isArray(data.channels)) return data.channels;
+          return null;
+        } catch { /* not JSON */ }
+
+        // Parse PHP-style output (each line: name,url or name|url)
+        const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+        const channels = [];
+        for (const line of lines) {
+          // Try "name,url" or "name|url"
+          const sep = line.includes('|') ? '|' : ',';
+          const idx = line.indexOf(sep);
+          if (idx > 0) {
+            const name = line.substring(0, idx).trim();
+            const url = line.substring(idx + 1).trim();
+            if (name && url && (url.startsWith('http://') || url.startsWith('https://'))) {
+              channels.push({ name, url });
+            }
+          }
+        }
+        return channels.length > 0 ? channels : null;
+      },
+    };
+
+    /* ============================================================
+       5. API LAYER
+       ============================================================ */
+    const api = {
+      /** Fetch source list from GitHub Gist */
+      async fetchSources() {
+        const cached = utils.cacheGet('sources');
+        if (cached) return cached;
+
+        const resp = await fetch(CONFIG.SOURCES_URL);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json = await resp.json();
+
+        let list = [];
+        if (Array.isArray(json)) list = json;
+        else if (json.content && Array.isArray(json.content)) list = json.content;
+        else if (json.data && Array.isArray(json.data)) list = json.data;
+        else throw new Error('数据源格式异常');
+
+        if (list.length === 0) throw new Error('暂无可用数据源');
+        utils.cacheSet('sources', list);
+        return list;
+      },
+
+      /** Fetch channel list for a given source URL via proxy */
+      async fetchChannels(sourceUrl) {
+        const cacheKey = 'channels_' + sourceUrl;
+        const cached = utils.cacheGet(cacheKey);
+        if (cached) return cached;
+
+        const url = utils.proxyUrl(sourceUrl);
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`代理请求失败 (HTTP ${resp.status})`);
+
+        const text = await resp.text();
+        if (!text || text.length < 10) throw new Error('获取频道列表为空');
+
+        const channels = utils.parseChannels(text);
+        if (!channels || channels.length === 0) throw new Error('无法解析频道列表');
+
+        utils.cacheSet(cacheKey, channels);
+        return channels;
+      },
+    };
+
+    /* ============================================================
+       6. PLAYER MANAGER (HLS)
+       ============================================================ */
+    const player = {
+      destroy() {
+        if (state.playerHls) {
+          state.playerHls.destroy();
+          state.playerHls = null;
+        }
+        dom.video.pause();
+        dom.video.removeAttribute('src');
+        dom.video.load();
+      },
+
+      /** 暂停（保留画面在最后一帧） */
+      pause() {
+        if (state.playerHls) {
+          // HLS.js 直接 pause video 即可停在最后一帧
+          dom.video.pause();
+        } else {
+          dom.video.pause();
+        }
+        state.isPaused = true;
+        dom.pausedOverlay.classList.remove('tv-hidden');
+        dom.stopBtn.textContent = '▶ 恢复播放';
+      },
+
+      /** 恢复播放 */
+      resume() {
+        dom.video.play().catch(() => {});
+        state.isPaused = false;
+        dom.pausedOverlay.classList.add('tv-hidden');
+        dom.stopBtn.textContent = '⏸ 暂停';
+      },
+
+      async play(url) {
+        this.destroy();
+        state.isPaused = false;
+        dom.pausedOverlay.classList.add('tv-hidden');
+        dom.loading.classList.remove('tv-hidden');
+        dom.errorOverlay.classList.add('tv-hidden');
+
+        try {
+          if (dom.video.canPlayType('application/vnd.apple.mpegurl')) {
+            // Native HLS (Safari)
+            dom.video.src = url;
+            await dom.video.play();
+          } else if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+            // HLS.js
+            const hls = new Hls({ manifestLoadingTimeOut: 15000 });
+            state.playerHls = hls;
+            hls.loadSource(url);
+            hls.attachMedia(dom.video);
+
+            await new Promise((resolve, reject) => {
+              const onManifest = () => { cleanup(); resolve(); };
+              const onError = (e, data) => {
+                if (data.fatal) { cleanup(); reject(new Error('HLS 加载失败')); }
+              };
+              const cleanup = () => {
+                hls.off(Hls.Events.MANIFEST_PARSED, onManifest);
+                hls.off(Hls.Events.ERROR, onError);
+              };
+              hls.on(Hls.Events.MANIFEST_PARSED, onManifest);
+              hls.on(Hls.Events.ERROR, onError);
+
+              // Timeout fallback
+              setTimeout(() => { cleanup(); reject(new Error('加载超时')); }, 20000);
+            });
+
+            await dom.video.play();
+          } else {
+            throw new Error('浏览器不支持 HLS 播放');
+          }
+
+          dom.loading.classList.add('tv-hidden');
+          dom.errorOverlay.classList.add('tv-hidden');
+          dom.stopBtn.textContent = '⏸ 暂停';
+        } catch (e) {
+          dom.loading.classList.add('tv-hidden');
+          throw e;
+        }
+      },
+
+      showError(title, detail) {
+        dom.loading.classList.add('tv-hidden');
+        dom.pausedOverlay.classList.add('tv-hidden');
+        dom.errorTitle.textContent = title || '播放失败';
+        dom.errorDetail.textContent = detail || '';
+        dom.errorOverlay.classList.remove('tv-hidden');
+      },
+
+      hideError() {
+        dom.errorOverlay.classList.add('tv-hidden');
+      },
+    };
+
+    /* ============================================================
+       7. UI CONTROLLER
+       ============================================================ */
+    const ui = {
+      /** Render source buttons on init overlay */
+      renderInitSources(sources) {
+        dom.initSources.innerHTML = sources.map((s, i) =>
+          `<button class="tv-init-source-btn" data-idx="${i}">${utils.esc(s.name)}</button>`
+        ).join('');
+      },
+
+      /** Render source tabs in drawer */
+      renderSourceTabs(sources, activeIdx) {
+        dom.sourceTabs.innerHTML = sources.map((s, i) =>
+          `<button class="tv-source-tab${i === activeIdx ? ' tv-active' : ''}" data-idx="${i}">
+            ${utils.esc(s.name)}
+          </button>`
+        ).join('');
+      },
+
+      /** Show loading skeleton in channel list */
+      showChannelSkeleton() {
+        dom.channelList.innerHTML = Array.from({ length: 12 }, (_, i) =>
+          `<div class="tv-channel-skeleton">
+            <div class="tv-sk-box" style="width:22px;height:12px"></div>
+            <div class="tv-sk-box" style="flex:1;height:14px;max-width:${120 + Math.random() * 80}px"></div>
+          </div>`
+        ).join('');
+      },
+
+      /** Render channel list */
+      renderChannels(channels, activeIdx) {
+        if (!channels || channels.length === 0) {
+          dom.channelList.innerHTML = '<div class="tv-channel-empty">暂无频道</div>';
+          return;
+        }
+        dom.channelList.innerHTML = channels.map((ch, i) =>
+          `<div class="tv-channel-item${i === activeIdx ? ' tv-active' : ''}" data-idx="${i}">
+            <span class="tv-channel-number">${String(i + 1).padStart(2, '0')}</span>
+            <div class="tv-channel-info">
+              <div class="tv-channel-name${i === activeIdx ? ' tv-now-playing' : ''}">${utils.esc(ch.name || '未知频道')}</div>
+              <div class="tv-channel-meta">${ch.label ? utils.esc(ch.label) : '直播中'}</div>
+            </div>
+            <span class="tv-channel-play-icon">▶</span>
+          </div>`
+        ).join('');
+      },
+
+      /** Show channel list error */
+      showChannelError(msg) {
+        dom.channelList.innerHTML = `<div class="tv-channel-error">⚠️ ${utils.esc(msg)}</div>`;
+      },
+
+      /** Update top bar info */
+      updateTopBar(sourceName, channelName) {
+        dom.topSource.textContent = sourceName || '—';
+        dom.topChannel.textContent = channelName || '请选择频道';
+      },
+
+      /** Show/hide player overlay */
+      setOverlayVisible(visible) {
+        state.isOverlayVisible = visible;
+        dom.playerOverlay.classList.toggle('tv-visible', visible);
+        if (visible) this.resetOverlayTimer();
+      },
+
+      resetOverlayTimer() {
+        if (state.overlayTimer) clearTimeout(state.overlayTimer);
+        state.overlayTimer = setTimeout(() => {
+          if (!state.isDrawerOpen) {
+            dom.playerOverlay.classList.remove('tv-visible');
+            state.isOverlayVisible = false;
+          }
+        }, 3500);
+      },
+
+      /** Toggle drawer */
+      toggleDrawer(open) {
+        const val = (open !== undefined) ? open : !state.isDrawerOpen;
+        state.isDrawerOpen = val;
+        dom.drawer.classList.toggle('tv-active', val);
+        dom.drawerOverlay.classList.toggle('tv-active', val);
+        if (val) {
+          dom.playerOverlay.classList.add('tv-visible');
+          if (state.overlayTimer) clearTimeout(state.overlayTimer);
+        } else {
+          this.resetOverlayTimer();
+        }
+      },
+
+      /** Hide init overlay */
+      hideInitOverlay() {
+        dom.initOverlay.classList.add('tv-hidden');
+      },
+    };
+
+    /* ============================================================
+       8. APP — 主逻辑编排
+       ============================================================ */
+    function bindEvents() {
+      // Init source buttons (event delegation)
+      dom.initSources.addEventListener('click', (e) => {
+        const btn = e.target.closest('.tv-init-source-btn');
+        if (!btn) return;
+        const idx = parseInt(btn.dataset.idx, 10);
+        if (idx >= 0 && idx < state.sources.length) {
+          selectSourceFromInit(idx);
+        }
+      });
+
+      // Source tabs in drawer
+      dom.sourceTabs.addEventListener('click', (e) => {
+        const tab = e.target.closest('.tv-source-tab');
+        if (!tab) return;
+        const idx = parseInt(tab.dataset.idx, 10);
+        if (idx >= 0 && idx < state.sources.length && idx !== state.activeSourceIdx) {
+          switchSource(idx);
+        }
+      });
+
+      // Channel list click
+      dom.channelList.addEventListener('click', (e) => {
+        const item = e.target.closest('.tv-channel-item');
+        if (!item) return;
+        const idx = parseInt(item.dataset.idx, 10);
+        if (idx >= 0 && idx < state.channels.length) {
+          playChannel(idx);
+        }
+      });
+
+      // Player overlay: show on mouse move, touch start
+      dom.playerContainer.addEventListener('mousemove', () => {
+        if (!state.isDrawerOpen) ui.setOverlayVisible(true);
+      });
+      dom.playerContainer.addEventListener('touchstart', () => {
+        if (!state.isDrawerOpen) ui.setOverlayVisible(true);
+      }, { passive: true });
+
+      // Drawer toggle
+      dom.toggleDrawerBtn.addEventListener('click', () => ui.toggleDrawer());
+      dom.openDrawerBtn.addEventListener('click', () => ui.toggleDrawer(true));
+      dom.drawerClose.addEventListener('click', () => ui.toggleDrawer(false));
+      dom.drawerOverlay.addEventListener('click', () => ui.toggleDrawer(false));
+
+      // Stop / Pause-Resume toggle
+      dom.stopBtn.addEventListener('click', () => {
+        if (!state.playerHls && !dom.video.src) return; // 没有播放内容
+        if (state.isPaused) {
+          player.resume();
+        } else {
+          player.pause();
+        }
+      });
+
+      // Resume button on paused overlay
+      dom.resumeBtn.addEventListener('click', () => {
+        player.resume();
+      });
+      // Click on the paused overlay itself also resumes
+      dom.pausedOverlay.addEventListener('click', () => {
+        player.resume();
+      });
+
+      // Error retry
+      dom.errorRetry.addEventListener('click', () => {
+        if (state.activeChannelIdx >= 0 && state.channels[state.activeChannelIdx]) {
+          playChannel(state.activeChannelIdx);
+        }
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          if (state.isDrawerOpen) ui.toggleDrawer(false);
+        }
+      });
+
+      // Resize — re-calc drawer width if needed
+      window.addEventListener('resize', utils.debounce(() => {}, 200));
+    }
+
+    /** Bootstrap: fetch sources → show init screen */
+    async function bootstrap() {
+      try {
+        const sources = await api.fetchSources();
+        state.sources = sources;
+        ui.renderInitSources(sources);
+      } catch (e) {
+        dom.initError.textContent = `❌ 加载数据源失败: ${e.message}。请检查网络后刷新页面。`;
+        dom.initError.classList.remove('tv-hidden');
+      }
+    }
+
+    /** User selects a source from the init overlay */
+    async function selectSourceFromInit(idx) {
+      state.activeSourceIdx = idx;
+      state.activeChannelIdx = -1;
+      const source = state.sources[idx];
+      ui.updateTopBar(source.name, null);
+      ui.hideInitOverlay();
+      // Show drawer with loading
+      ui.renderSourceTabs(state.sources, idx);
+      ui.showChannelSkeleton();
+      ui.toggleDrawer(true);
+
+      try {
+        const channels = await api.fetchChannels(source.url);
+        state.channels = channels;
+        ui.renderChannels(channels, -1);
+      } catch (e) {
+        state.channels = [];
+        ui.showChannelError(e.message);
+      }
+    }
+
+    /** Switch source from drawer tab */
+    async function switchSource(idx) {
+      if (idx === state.activeSourceIdx) return;
+      state.activeSourceIdx = idx;
+      state.activeChannelIdx = -1;
+      // Reset paused state
+      state.isPaused = false;
+      dom.pausedOverlay.classList.add('tv-hidden');
+      dom.stopBtn.textContent = '⏹ 停止播放';
+      const source = state.sources[idx];
+      ui.updateTopBar(source.name, null);
+
+      // Update tab UI
+      document.querySelectorAll('.tv-source-tab').forEach(el => el.classList.remove('tv-active'));
+      const activeTab = document.querySelector(`.tv-source-tab[data-idx="${idx}"]`);
+      if (activeTab) activeTab.classList.add('tv-active');
+
+      // Destroy current player
+      player.destroy();
+      player.hideError();
+
+      ui.showChannelSkeleton();
+      // Update top bar
+      dom.topChannel.textContent = '请选择频道';
+
+      try {
+        const channels = await api.fetchChannels(source.url);
+        state.channels = channels;
+        ui.renderChannels(channels, -1);
+      } catch (e) {
+        state.channels = [];
+        ui.showChannelError(e.message);
+      }
+    }
+
+    /** Play a channel */
+    async function playChannel(idx) {
+      const channel = state.channels[idx];
+      if (!channel || !channel.url) {
+        player.showError('无效频道', '该频道暂无可用播放地址');
+        return;
+      }
+
+      state.activeChannelIdx = idx;
+      const sourceName = state.activeSourceIdx >= 0 ? state.sources[state.activeSourceIdx].name : '';
+
+      // Update UI
+      ui.updateTopBar(sourceName, channel.name);
+      ui.renderChannels(state.channels, idx);
+      ui.renderSourceTabs(state.sources, state.activeSourceIdx);
+      ui.toggleDrawer(false);
+
+      dom.loading.classList.remove('tv-hidden');
+      dom.errorOverlay.classList.add('tv-hidden');
+
+      try {
+        await player.play(channel.url);
+      } catch (e) {
+        player.showError('播放失败', e.message);
+      }
+    }
+
+    /* ============================================================
+       INIT
+       ============================================================ */
+    function init() {
+      cacheDom();
+      bindEvents();
+      bootstrap();
+    }
+
+    // Start when DOM ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+
+    // Return public API for potential external access (e.g., debugging)
+    return { state, dom, api, player, ui };
+
+  })();
+  </script>
+</body>
+</html>
