@@ -219,6 +219,10 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   padding-right: 12px;
 }
+.av2-player-top-right {
+  display: flex; align-items: center; gap: 8px;
+  pointer-events: auto;
+}
 .av2-player-close {
   flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
@@ -227,6 +231,15 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   pointer-events: auto;
 }
 .av2-player-close:hover { background: rgba(0,0,0,.7); }
+/* iOS 静音提示 */
+.av2-unmute-hint {
+  font-size: 12px; color: #fff; background: rgba(0,0,0,.5);
+  padding: 4px 10px; border-radius: 20px;
+  white-space: nowrap; cursor: pointer;
+  opacity: 1; transition: opacity .5s;
+  pointer-events: auto;
+}
+.av2-unmute-hint.av2-hidden { opacity: 0; pointer-events: none; }
 
 /* Video.js skin */
 .av2-modal-player .video-js .vjs-control-bar {

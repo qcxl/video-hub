@@ -52,6 +52,7 @@ function cacheDom() {
   dom.playerCover = $('#av2PlayerCover');
   dom.playerCoverImg = $('#av2PlayerCoverImg');
   dom.playerCoverLoading = $('#av2PlayerCoverLoading');
+  dom.unmuteHint = $('#av2UnmuteHint');
 
   dom.contentNavWrap = $('#av2ContentNavWrap');
   dom.contentNav = $('#av2ContentNav');

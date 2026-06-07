@@ -3,6 +3,11 @@
    ============================================================ */
 let vjsPlayer = null;
 let vjsInitialized = false;
+let unmuteHintTimer = null;
+
+/** iOS 检测 */
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 const player = {
   _initVjs() {
@@ -26,7 +31,6 @@ const player = {
   _showCover(thumbUrl, title) {
     dom.playerTitle.textContent = title;
     dom.playerCover.classList.add('av2-visible');
-    // 异步加载解密后的封面图（不阻塞播放流程）
     if (thumbUrl) {
       loadEncryptedImage(thumbUrl).then(blobUrl => {
         if (blobUrl) dom.playerCoverImg.src = blobUrl;
@@ -38,6 +42,20 @@ const player = {
   _hideCover() {
     dom.playerCover.classList.remove('av2-visible');
     dom.playerCoverImg.src = '';
+  },
+
+  /** 显示静音提示（仅 iOS） */
+  _showUnmuteHint() {
+    dom.unmuteHint?.classList.remove('av2-hidden');
+    if (unmuteHintTimer) clearTimeout(unmuteHintTimer);
+    // 播放后自动隐藏
+    vjsPlayer.one('volumechange', () => {
+      dom.unmuteHint?.classList.add('av2-hidden');
+    });
+    // 5 秒后自动消失
+    unmuteHintTimer = setTimeout(() => {
+      dom.unmuteHint?.classList.add('av2-hidden');
+    }, 5000);
   },
 
   async play(videoId, title, thumbUrl) {
@@ -54,38 +72,41 @@ const player = {
       this._initVjs();
       vjsPlayer.src({ src: playUrl, type: 'application/x-mpegURL' });
 
-      // ★ 事件监听器先于 play() 注册，避免竞态
-      // 视频开始播放 → 隐藏封面
-      vjsPlayer.one('playing', () => {
-        this._hideCover();
-      });
-      // 播放出错 → 显示错误
+      // 事件先于 play() 注册
+      vjsPlayer.one('playing', () => { this._hideCover(); });
       vjsPlayer.one('error', () => {
         dom.playerCoverLoading?.classList.remove('av2-visible');
         dom.playerTitle.textContent = '播放出错，请重试';
       });
 
-      // 尝试播放
-      const p = vjsPlayer.play();
-      if (p) {
-        p.catch(() => {
-          // 自动播放被阻止（例如 iOS）→ 隐藏封面+转圈，用户可手动点播放
-          this._hideCover();
-        });
+      if (isIOS) {
+        // ======== iOS 方案：静音自动播放（100% 通过） ========
+        vjsPlayer.muted(true);
+        const p = vjsPlayer.play();
+        if (p) {
+          p.then(() => {
+            this._hideCover();
+            this._showUnmuteHint();
+          }).catch(() => { this._hideCover(); });
+        }
+      } else {
+        // ======== 非 iOS：正常自动播放 ========
+        const p = vjsPlayer.play();
+        if (p) {
+          p.catch(() => { this._hideCover(); });
+        }
       }
     } catch (e) {
-      // AbortError = 用户快速切换视频，不显示错误
       if (e.name === 'AbortError') return;
       dom.playerTitle.textContent = '播放失败: ' + e.message;
     }
   },
 
   close() {
-    if (vjsPlayer) {
-      vjsPlayer.pause();
-      vjsPlayer.reset();
-    }
+    if (vjsPlayer) { vjsPlayer.pause(); vjsPlayer.reset(); }
     this._hideCover();
+    dom.unmuteHint?.classList.add('av2-hidden');
+    if (unmuteHintTimer) clearTimeout(unmuteHintTimer);
     dom.modalOverlay.classList.remove('av2-visible');
   },
 };
