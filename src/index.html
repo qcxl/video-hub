@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vv视频 · 频道导航</title>
+  <link href="https://cdn.jsdelivr.net/npm/video.js@8/dist/video-js.min.css" rel="stylesheet">
+  <style>
+    /* style.css 会在构建时内联到这里 */
+  </style>
+</head>
+<body>
+
+  <!-- ============================================================
+       Top Bar
+       ============================================================ -->
+  <header class="av2-topbar">
+    <button class="av2-topbar-menu-btn" id="av2MenuBtn">☰</button>
+    <div class="av2-logo">
+      <span class="av2-logo-icon">
+        <svg t="1780740874956" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+          <path d="M426.666667 682.666667V384l256 149.845333L426.666667 682.666667z m587.093333-355.541334s-10.026667-71.04-40.704-102.357333c-38.954667-41.088-82.602667-41.258667-102.613333-43.648C727.168 170.666667 512.213333 170.666667 512.213333 170.666667h-0.426666s-214.954667 0-358.229334 10.453333c-20.053333 2.389333-63.658667 2.56-102.656 43.648-30.677333 31.317333-40.661333 102.4-40.661333 102.4S0 410.538667 0 493.952v78.293333c0 83.456 10.24 166.912 10.24 166.912s9.984 71.04 40.661333 102.357334c38.997333 41.088 90.154667 39.765333 112.938667 44.074666C245.76 893.568 512 896 512 896s215.168-0.341333 358.442667-10.752c20.053333-2.432 63.658667-2.602667 102.613333-43.690667 30.72-31.317333 40.704-102.4 40.704-102.4s10.24-83.413333 10.24-166.869333v-78.250667c0-83.456-10.24-166.912-10.24-166.912z" fill="#FF0000" p-id="2190"></path>
+        </svg>
+      </span>
+      <span class="av2-logo-text">Lu<span>Tube</span></span>
+    </div>
+  </header>
+
+  <!-- ============================================================
+       Sidebar
+       ============================================================ -->
+  <nav class="av2-sidebar" id="av2Sidebar">
+    <div class="av2-sidebar-label">频道</div>
+    <div id="av2ChannelList"><!-- JS 渲染 --></div>
+  </nav>
+
+  <div class="av2-drawer-overlay" id="av2DrawerOverlay"
+       style="display:none;position:fixed;inset:0;z-index:49;background:rgba(0,0,0,.3)"></div>
+
+  <!-- ============================================================
+       Main
+       ============================================================ -->
+  <main class="av2-main" id="av2Main">
+    <div class="av2-content-nav-wrap" id="av2ContentNavWrap">
+      <div class="av2-content-nav" id="av2ContentNav"><!-- JS 渲染 --></div>
+    </div>
+    <div class="av2-content" id="av2Content">
+      <div class="av2-grid" id="av2Grid"></div>
+      <div class="av2-pagination" id="av2Pagination"></div>
+    </div>
+  </main>
+
+  <!-- ============================================================
+       Modal Player (Video.js)
+       ============================================================ -->
+  <div class="av2-modal-overlay" id="av2ModalOverlay">
+    <div class="av2-modal-player" id="av2ModalPlayer">
+      <video-js id="av2Video" class="vjs-default-skin vjs-big-play-centered" playsinline preload="metadata"></video-js>
+      <div class="av2-player-top">
+        <span class="av2-player-top-title" id="av2PlayerTitle">—</span>
+        <button class="av2-player-close" id="av2PlayerClose">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Video.js -->
+  <script src="https://cdn.jsdelivr.net/npm/video.js@8/dist/video.min.js"></script>
+  <!-- JS modules (构建时内联) -->
+
+</body>
+</html>
