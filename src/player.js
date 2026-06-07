@@ -53,17 +53,26 @@ const player = {
 
       this._initVjs();
       vjsPlayer.src({ src: playUrl, type: 'application/x-mpegURL' });
-      vjsPlayer.play().catch(() => {});
 
+      // ★ 事件监听器先于 play() 注册，避免竞态
       // 视频开始播放 → 隐藏封面
       vjsPlayer.one('playing', () => {
         this._hideCover();
       });
-      // 播放出错 → 隐藏转圈，显示错误
+      // 播放出错 → 显示错误
       vjsPlayer.one('error', () => {
         dom.playerCoverLoading?.classList.remove('av2-visible');
         dom.playerTitle.textContent = '播放出错，请重试';
       });
+
+      // 尝试播放
+      const p = vjsPlayer.play();
+      if (p) {
+        p.catch(() => {
+          // 自动播放被阻止（例如 iOS）→ 隐藏封面+转圈，用户可手动点播放
+          this._hideCover();
+        });
+      }
     } catch (e) {
       dom.playerTitle.textContent = '播放失败: ' + e.message;
     }
