@@ -24,6 +24,9 @@ jobs:
           chmod +x build.sh
           ./build.sh
 
+      - name: Write CNAME for custom domain
+        run: echo "hub.24tv.cc.cd" > dist/CNAME
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
