@@ -10,8 +10,8 @@ const player = {
     const videoEl = document.getElementById('av2Video');
     vjsPlayer = videojs(videoEl, {
       controls: true,
-      autoplay: false,
-      preload: 'metadata',
+      autoplay: true,
+      preload: 'auto',
       inactivityTimeout: 5000,
       controlBar: {
         volumePanel: { inline: false },
