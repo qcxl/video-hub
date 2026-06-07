@@ -8,6 +8,8 @@ let unmuteHintTimer = null;
 /** iOS 检测 */
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
   || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+/** 用户是否在本次会话中主动取消过静音 */
+let userUnmuted = false;
 
 const player = {
   _initVjs() {
@@ -48,9 +50,12 @@ const player = {
   _showUnmuteHint() {
     dom.unmuteHint?.classList.remove('av2-hidden');
     if (unmuteHintTimer) clearTimeout(unmuteHintTimer);
-    // 播放后自动隐藏
+    // 监听用户取消静音 → 记录状态，后续视频不再静音
     vjsPlayer.one('volumechange', () => {
       dom.unmuteHint?.classList.add('av2-hidden');
+      if (!vjsPlayer.muted()) {
+        userUnmuted = true;
+      }
     });
     // 5 秒后自动消失
     unmuteHintTimer = setTimeout(() => {
@@ -79,8 +84,8 @@ const player = {
         dom.playerTitle.textContent = '播放出错，请重试';
       });
 
-      if (isIOS) {
-        // ======== iOS 方案：静音自动播放（100% 通过） ========
+      if (isIOS && !userUnmuted) {
+        // ======== iOS + 用户未取消过静音：先静音自动播放 ========
         vjsPlayer.muted(true);
         const p = vjsPlayer.play();
         if (p) {
