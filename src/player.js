@@ -74,6 +74,8 @@ const player = {
         });
       }
     } catch (e) {
+      // AbortError = 用户快速切换视频，不显示错误
+      if (e.name === 'AbortError') return;
       dom.playerTitle.textContent = '播放失败: ' + e.message;
     }
   },

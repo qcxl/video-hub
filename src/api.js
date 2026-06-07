@@ -149,6 +149,8 @@ let currentAbort = null;
 function newAbort() { if (currentAbort) currentAbort.abort(); currentAbort = new AbortController(); return currentAbort; }
 
 async function apiRequest(method, url, opts = {}) {
+  // 取消上一个请求，创建新的 AbortController
+  const abortCtrl = newAbort();
   const { params, data, token } = opts;
   let fullUrl = url;
   if (params) {
@@ -159,7 +161,7 @@ async function apiRequest(method, url, opts = {}) {
   if (CONFIG.USE_CORS_PROXY) fullUrl = CONFIG.CORS_PROXY + encodeURIComponent(fullUrl);
   const headers = { ...CONFIG.HEADERS };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const fetchOpts = { method, headers, signal: currentAbort?.signal };
+  const fetchOpts = { method, headers, signal: abortCtrl.signal };
   if (method === 'POST' && data) {
     fetchOpts.body = JSON.stringify(data);
     if (!CONFIG.USE_CORS_PROXY) headers['Content-Type'] = 'application/json; charset=utf-8';
