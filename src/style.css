@@ -165,8 +165,15 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   background: #000; border-radius: 10px; overflow: hidden;
   position: relative; box-shadow: 0 12px 48px rgba(0,0,0,.6);
   aspect-ratio: 16 / 9;
+  /* 方案 A: clip-path 强制裁切所有子元素 */
+  clip-path: inset(0 round 10px);
+  -webkit-clip-path: inset(0 round 10px);
 }
-.av2-modal-player .video-js { width: 100%; height: 100%; border-radius: 10px; }
+.av2-modal-player .video-js { width: 100%; height: 100%; }
+/* 方案 C: 给内部原生 <video> 标签直接设圆角 */
+.av2-modal-player .video-js video {
+  border-radius: 10px;
+}
 
 /* 封面层 — 覆盖在 video 上方，加载时显示 */
 .av2-player-cover {
