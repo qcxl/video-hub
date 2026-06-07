@@ -140,6 +140,8 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   color: var(--av2-text-secondary);
   transition: background var(--av2-transition), color var(--av2-transition);
   white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
 }
 .av2-nav-tab:hover { background: var(--av2-bg-hover); color: var(--av2-text); }
 .av2-nav-tab.av2-active {
