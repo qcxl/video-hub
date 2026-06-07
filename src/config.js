@@ -49,6 +49,9 @@ function cacheDom() {
   dom.video = $('#av2Video');
   dom.playerTitle = $('#av2PlayerTitle');
   dom.playerClose = $('#av2PlayerClose');
+  dom.playerCover = $('#av2PlayerCover');
+  dom.playerCoverImg = $('#av2PlayerCoverImg');
+  dom.playerCoverLoading = $('#av2PlayerCoverLoading');
 
   dom.contentNavWrap = $('#av2ContentNavWrap');
   dom.contentNav = $('#av2ContentNav');

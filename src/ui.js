@@ -34,7 +34,7 @@ const ui = {
     dom.grid.innerHTML = list.map(v => {
       const url = v.upload_thumb || v.thumb || '';
       const label = v.label || '';
-      return `<div class="av2-card" data-id="${v.id}" data-title="${esc(v.title)}">
+      return `<div class="av2-card" data-id="${v.id}" data-title="${esc(v.title)}" data-thumb="${esc(url)}">
         <div class="av2-thumb">
           <img class="av2-thumb-img" data-src="${esc(url)}" alt="${esc(v.title)}">
           ${label ? `<span class="av2-duration" style="left:6px;right:auto;background:var(--av2-accent)">${esc(label)}</span>` : ''}
@@ -66,7 +66,7 @@ const ui = {
           ${list.map(v => {
             const url = v.upload_thumb || v.thumb || '';
             const label = v.label || '';
-            return `<div class="av2-section-card" data-id="${v.id}" data-title="${esc(v.title)}">
+            return `<div class="av2-section-card" data-id="${v.id}" data-title="${esc(v.title)}" data-thumb="${esc(url)}">
               <div class="av2-thumb">
                 <img class="av2-thumb-img" data-src="${esc(url)}" alt="${esc(v.title)}">
                 ${label ? `<span class="av2-duration" style="left:6px;right:auto;background:var(--av2-accent)">${esc(label)}</span>` : ''}

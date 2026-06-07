@@ -48,7 +48,8 @@ function bindEvents() {
     if (!card) return;
     const id = card.dataset.id;
     const title = card.dataset.title;
-    if (id) player.play(id, title);
+    const thumbUrl = card.dataset.thumb || '';
+    if (id) player.play(id, title, thumbUrl);
   });
 
   // 分页

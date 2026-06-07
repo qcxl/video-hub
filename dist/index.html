@@ -176,6 +176,35 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 }
 .av2-modal-player .video-js { width: 100%; height: 100%; }
 
+/* 封面层 — 覆盖在 video 上方，加载时显示 */
+.av2-player-cover {
+  position: absolute; inset: 0; z-index: 50;
+  display: none;
+  background: #000;
+}
+.av2-player-cover.av2-visible { display: block; }
+.av2-player-cover-img {
+  width: 100%; height: 100%; object-fit: contain;
+  display: block;
+}
+.av2-player-cover-loading {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.3);
+}
+.av2-player-cover-loading .av2-spinner {
+  width: 44px; height: 44px;
+  border: 3px solid rgba(255,255,255,.15);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: av2-cover-spin .8s linear infinite;
+}
+@keyframes av2-cover-spin { to { transform: rotate(360deg); } }
+/* 隐藏中央大播放按钮 */
+.av2-modal-player .video-js .vjs-big-play-button {
+  display: none !important;
+}
+
 /* Top bar overlaid on Video.js */
 .av2-player-top {
   position: absolute; top: 0; left: 0; right: 0; z-index: 100;
@@ -447,6 +476,16 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
   <div class="av2-modal-overlay" id="av2ModalOverlay">
     <div class="av2-modal-player" id="av2ModalPlayer">
       <video-js id="av2Video" class="vjs-default-skin vjs-big-play-centered" playsinline preload="metadata"></video-js>
+
+      <!-- 封面层（视频加载期间显示） -->
+      <div class="av2-player-cover" id="av2PlayerCover">
+        <img class="av2-player-cover-img" id="av2PlayerCoverImg" alt="">
+        <div class="av2-player-cover-loading" id="av2PlayerCoverLoading">
+          <div class="av2-spinner"></div>
+        </div>
+      </div>
+
+      <!-- 顶部标题栏 -->
       <div class="av2-player-top">
         <span class="av2-player-top-title" id="av2PlayerTitle">—</span>
         <button class="av2-player-close" id="av2PlayerClose">✕</button>
@@ -508,6 +547,9 @@ function cacheDom() {
   dom.video = $('#av2Video');
   dom.playerTitle = $('#av2PlayerTitle');
   dom.playerClose = $('#av2PlayerClose');
+  dom.playerCover = $('#av2PlayerCover');
+  dom.playerCoverImg = $('#av2PlayerCoverImg');
+  dom.playerCoverLoading = $('#av2PlayerCoverLoading');
 
   dom.contentNavWrap = $('#av2ContentNavWrap');
   dom.contentNav = $('#av2ContentNav');
@@ -799,15 +841,30 @@ const player = {
         remainingTimeDisplay: false,
       },
     });
-    vjsPlayer.on('error', () => {
-      dom.playerTitle.textContent = '播放出错，请重试';
-    });
     vjsInitialized = true;
   },
 
-  async play(videoId, title) {
+  /** 显示封面 + 加载转圈 */
+  _showCover(thumbUrl, title) {
+    dom.playerTitle.textContent = title;
+    dom.playerCover.classList.add('av2-visible');
+    // 异步加载解密后的封面图（不阻塞播放流程）
+    if (thumbUrl) {
+      loadEncryptedImage(thumbUrl).then(blobUrl => {
+        if (blobUrl) dom.playerCoverImg.src = blobUrl;
+      }).catch(() => {});
+    }
+  },
+
+  /** 隐藏封面 */
+  _hideCover() {
+    dom.playerCover.classList.remove('av2-visible');
+    dom.playerCoverImg.src = '';
+  },
+
+  async play(videoId, title, thumbUrl) {
     dom.modalOverlay.classList.add('av2-visible');
-    dom.playerTitle.textContent = title || '加载中…';
+    this._showCover(thumbUrl, title || '加载中…');
 
     try {
       const data = await CHANNEL_VV.fetchVideoDetail(state.token, videoId);
@@ -819,6 +876,16 @@ const player = {
       this._initVjs();
       vjsPlayer.src({ src: playUrl, type: 'application/x-mpegURL' });
       vjsPlayer.play().catch(() => {});
+
+      // 视频开始播放 → 隐藏封面
+      vjsPlayer.one('playing', () => {
+        this._hideCover();
+      });
+      // 播放出错 → 隐藏转圈，显示错误
+      vjsPlayer.one('error', () => {
+        dom.playerCoverLoading?.classList.remove('av2-visible');
+        dom.playerTitle.textContent = '播放出错，请重试';
+      });
     } catch (e) {
       dom.playerTitle.textContent = '播放失败: ' + e.message;
     }
@@ -829,6 +896,7 @@ const player = {
       vjsPlayer.pause();
       vjsPlayer.reset();
     }
+    this._hideCover();
     dom.modalOverlay.classList.remove('av2-visible');
   },
 };
@@ -883,7 +951,7 @@ const ui = {
     dom.grid.innerHTML = list.map(v => {
       const url = v.upload_thumb || v.thumb || '';
       const label = v.label || '';
-      return `<div class="av2-card" data-id="${v.id}" data-title="${esc(v.title)}">
+      return `<div class="av2-card" data-id="${v.id}" data-title="${esc(v.title)}" data-thumb="${esc(url)}">
         <div class="av2-thumb">
           <img class="av2-thumb-img" data-src="${esc(url)}" alt="${esc(v.title)}">
           ${label ? `<span class="av2-duration" style="left:6px;right:auto;background:var(--av2-accent)">${esc(label)}</span>` : ''}
@@ -915,7 +983,7 @@ const ui = {
           ${list.map(v => {
             const url = v.upload_thumb || v.thumb || '';
             const label = v.label || '';
-            return `<div class="av2-section-card" data-id="${v.id}" data-title="${esc(v.title)}">
+            return `<div class="av2-section-card" data-id="${v.id}" data-title="${esc(v.title)}" data-thumb="${esc(url)}">
               <div class="av2-thumb">
                 <img class="av2-thumb-img" data-src="${esc(url)}" alt="${esc(v.title)}">
                 ${label ? `<span class="av2-duration" style="left:6px;right:auto;background:var(--av2-accent)">${esc(label)}</span>` : ''}
@@ -1013,7 +1081,8 @@ function bindEvents() {
     if (!card) return;
     const id = card.dataset.id;
     const title = card.dataset.title;
-    if (id) player.play(id, title);
+    const thumbUrl = card.dataset.thumb || '';
+    if (id) player.play(id, title, thumbUrl);
   });
 
   // 分页

@@ -56,6 +56,16 @@
   <div class="av2-modal-overlay" id="av2ModalOverlay">
     <div class="av2-modal-player" id="av2ModalPlayer">
       <video-js id="av2Video" class="vjs-default-skin vjs-big-play-centered" playsinline preload="metadata"></video-js>
+
+      <!-- 封面层（视频加载期间显示） -->
+      <div class="av2-player-cover" id="av2PlayerCover">
+        <img class="av2-player-cover-img" id="av2PlayerCoverImg" alt="">
+        <div class="av2-player-cover-loading" id="av2PlayerCoverLoading">
+          <div class="av2-spinner"></div>
+        </div>
+      </div>
+
+      <!-- 顶部标题栏 -->
       <div class="av2-player-top">
         <span class="av2-player-top-title" id="av2PlayerTitle">—</span>
         <button class="av2-player-close" id="av2PlayerClose">✕</button>

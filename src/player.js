@@ -19,15 +19,30 @@ const player = {
         remainingTimeDisplay: false,
       },
     });
-    vjsPlayer.on('error', () => {
-      dom.playerTitle.textContent = '播放出错，请重试';
-    });
     vjsInitialized = true;
   },
 
-  async play(videoId, title) {
+  /** 显示封面 + 加载转圈 */
+  _showCover(thumbUrl, title) {
+    dom.playerTitle.textContent = title;
+    dom.playerCover.classList.add('av2-visible');
+    // 异步加载解密后的封面图（不阻塞播放流程）
+    if (thumbUrl) {
+      loadEncryptedImage(thumbUrl).then(blobUrl => {
+        if (blobUrl) dom.playerCoverImg.src = blobUrl;
+      }).catch(() => {});
+    }
+  },
+
+  /** 隐藏封面 */
+  _hideCover() {
+    dom.playerCover.classList.remove('av2-visible');
+    dom.playerCoverImg.src = '';
+  },
+
+  async play(videoId, title, thumbUrl) {
     dom.modalOverlay.classList.add('av2-visible');
-    dom.playerTitle.textContent = title || '加载中…';
+    this._showCover(thumbUrl, title || '加载中…');
 
     try {
       const data = await CHANNEL_VV.fetchVideoDetail(state.token, videoId);
@@ -39,6 +54,16 @@ const player = {
       this._initVjs();
       vjsPlayer.src({ src: playUrl, type: 'application/x-mpegURL' });
       vjsPlayer.play().catch(() => {});
+
+      // 视频开始播放 → 隐藏封面
+      vjsPlayer.one('playing', () => {
+        this._hideCover();
+      });
+      // 播放出错 → 隐藏转圈，显示错误
+      vjsPlayer.one('error', () => {
+        dom.playerCoverLoading?.classList.remove('av2-visible');
+        dom.playerTitle.textContent = '播放出错，请重试';
+      });
     } catch (e) {
       dom.playerTitle.textContent = '播放失败: ' + e.message;
     }
@@ -49,6 +74,7 @@ const player = {
       vjsPlayer.pause();
       vjsPlayer.reset();
     }
+    this._hideCover();
     dom.modalOverlay.classList.remove('av2-visible');
   },
 };

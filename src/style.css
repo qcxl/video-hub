@@ -168,6 +168,35 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 }
 .av2-modal-player .video-js { width: 100%; height: 100%; }
 
+/* 封面层 — 覆盖在 video 上方，加载时显示 */
+.av2-player-cover {
+  position: absolute; inset: 0; z-index: 50;
+  display: none;
+  background: #000;
+}
+.av2-player-cover.av2-visible { display: block; }
+.av2-player-cover-img {
+  width: 100%; height: 100%; object-fit: contain;
+  display: block;
+}
+.av2-player-cover-loading {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.3);
+}
+.av2-player-cover-loading .av2-spinner {
+  width: 44px; height: 44px;
+  border: 3px solid rgba(255,255,255,.15);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: av2-cover-spin .8s linear infinite;
+}
+@keyframes av2-cover-spin { to { transform: rotate(360deg); } }
+/* 隐藏中央大播放按钮 */
+.av2-modal-player .video-js .vjs-big-play-button {
+  display: none !important;
+}
+
 /* Top bar overlaid on Video.js */
 .av2-player-top {
   position: absolute; top: 0; left: 0; right: 0; z-index: 100;
